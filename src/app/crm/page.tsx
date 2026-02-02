@@ -73,22 +73,8 @@ export default function CRMPage() {
     setLoading(true);
     try {
       const [actRes, taskRes, custRes, teamRes] = await Promise.all([
-        supabase.from('crm_activities').select('*, customer:customer_id(name), sales_team:sales_person_id(name, region)').order('activity_date', { ascending: false }),
-        supabase.from('crm_tasks').select('*, customer:customer_id(name), sales_team:sales_person_id(name, region)').order('due_date', { ascending: true }),
-        supabase.from('customers').select('id, name').order('name'),
-        supabase.from('sales_team').select('id, name, region').eq('status', 'active'),
-      ]);
-      setActivities(actRes.data || []);
-      setTasks(taskRes.data || []);
-      setCustomers(custRes.data || []);
-      setSalesTeam(teamRes.data || []);
-    } catch (err: any) {
-      console.error('Hata:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+        supabase.from('crm_activities').select('*').order('activity_date', { ascending: false }),
+supabase.from('crm_tasks').select('*').order('due_date', { ascending: true }),
   useEffect(() => { fetchData(); }, []);
 
   const handleFilterChange = (filters: { region: string; department: string; repId: string }) => {
