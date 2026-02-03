@@ -11,6 +11,7 @@ import {
   ArrowUpRight, ArrowDownRight, Zap, AlertTriangle, Eye, ChevronRight
 } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart as RechartsPie, Pie, Cell,
@@ -64,6 +65,7 @@ export default function Dashboard() {
   }
 
   // Admin ve Manager için tam dashboard
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [salesTeam, setSalesTeam] = useState<SalesPerson[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
@@ -130,8 +132,8 @@ export default function Dashboard() {
       // Aktiviteler
       const { data: activities } = await supabase
         .from('crm_activities')
-        .select('*, sales_person:sales_team(name)')
-        .order('date', { ascending: false })
+        .select('*')
+        .order('activity_date', { ascending: false })
         .limit(5);
 
       setRecentActivities(activities || []);
@@ -251,7 +253,7 @@ export default function Dashboard() {
         {/* Top KPI Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
           {/* Satış */}
-          <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+          <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/opportunities')}>
             <CardBody className="p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -281,7 +283,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Tahsilat */}
-          <Card className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
+          <Card className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/collections')}>
             <CardBody className="p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -311,7 +313,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Pipeline */}
-          <Card className="bg-gradient-to-br from-violet-500 to-purple-600 text-white">
+          <Card className="bg-gradient-to-br from-violet-500 to-purple-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/opportunities')}>
             <CardBody className="p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -335,7 +337,7 @@ export default function Dashboard() {
           </Card>
 
           {/* Müşteriler */}
-          <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white">
+          <Card className="bg-gradient-to-br from-amber-500 to-orange-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/customers')}>
             <CardBody className="p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -606,27 +608,27 @@ export default function Dashboard() {
         {/* Quick Stats Footer */}
         <div className="mt-6 p-4 bg-slate-50 rounded-xl">
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-center">
-            <div>
+            <div className="cursor-pointer hover:bg-white hover:shadow rounded-lg p-2 transition-all" onClick={() => router.push('/team')}>
               <p className="text-2xl font-bold text-indigo-600">{stats.teamCount}</p>
               <p className="text-xs text-slate-500">Satış Temsilcisi</p>
             </div>
-            <div>
+            <div className="cursor-pointer hover:bg-white hover:shadow rounded-lg p-2 transition-all" onClick={() => router.push('/customers')}>
               <p className="text-2xl font-bold text-emerald-600">{stats.customerCount}</p>
               <p className="text-xs text-slate-500">Toplam Müşteri</p>
             </div>
-            <div>
+            <div className="cursor-pointer hover:bg-white hover:shadow rounded-lg p-2 transition-all" onClick={() => router.push('/opportunities')}>
               <p className="text-2xl font-bold text-violet-600">{stats.opportunityCount}</p>
               <p className="text-xs text-slate-500">Açık Fırsat</p>
             </div>
-            <div>
+            <div className="cursor-pointer hover:bg-white hover:shadow rounded-lg p-2 transition-all" onClick={() => router.push('/opportunities')}>
               <p className="text-2xl font-bold text-amber-600">{stats.wonOpportunities}</p>
               <p className="text-xs text-slate-500">Kazanılan Fırsat</p>
             </div>
-            <div>
+            <div className="cursor-pointer hover:bg-white hover:shadow rounded-lg p-2 transition-all" onClick={() => router.push('/opportunities')}>
               <p className="text-2xl font-bold text-blue-600">{(stats.salesRatio * 100).toFixed(0)}%</p>
               <p className="text-xs text-slate-500">Hedef Gerçekleşme</p>
             </div>
-            <div>
+            <div className="cursor-pointer hover:bg-white hover:shadow rounded-lg p-2 transition-all" onClick={() => router.push('/collections')}>
               <p className="text-2xl font-bold text-teal-600">{(stats.collectionRatio * 100).toFixed(0)}%</p>
               <p className="text-xs text-slate-500">Tahsilat Oranı</p>
             </div>
