@@ -74,7 +74,7 @@ export default function CRMPage() {
     try {
       const [actRes, taskRes, custRes, teamRes] = await Promise.all([
         supabase.from('crm_activities').select('*').order('activity_date', { ascending: false }),
-supabase.from('crm_tasks').select('*').order('due_date', { ascending: true }),
+        supabase.from('crm_tasks').select('*').order('due_date', { ascending: true }),
   useEffect(() => { fetchData(); }, []);
 
   const handleFilterChange = (filters: { region: string; department: string; repId: string }) => {
