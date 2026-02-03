@@ -46,7 +46,7 @@ export default function TargetsPage() {
     setLoading(true);
     try {
       const [targetRes, teamRes] = await Promise.all([
-        supabase.from('targets').select('*, sales_team:sales_person_id(name, region)').order('period', { ascending: false }),
+        supabase.from('targets').select('*').order('period', { ascending: false }),
         supabase.from('sales_team').select('id, name, region').eq('status', 'active'),
       ]);
       setTargets(targetRes.data || []);
