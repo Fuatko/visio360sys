@@ -1,8 +1,7 @@
 'use client';
 
 import Header from '@/components/Header';
-import SalesFilter from '@/components/SalesFilter';
-import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui';
+import { Card, CardBody, Button, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui';
 import { Calendar, Plus, Edit2, Trash2, RefreshCw, Phone, Mail, Users, CheckSquare, Clock, Building2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -15,8 +14,6 @@ interface Activity {
   title: string;
   description: string;
   activity_date: string;
-  customer?: { name: string } | null;
-  sales_team?: { name: string; region: string } | null;
 }
 
 interface Task {
@@ -28,8 +25,6 @@ interface Task {
   due_date: string;
   priority: string;
   status: string;
-  customer?: { name: string } | null;
-  sales_team?: { name: string; region: string } | null;
 }
 
 interface Customer {
@@ -43,6 +38,19 @@ interface SalesPerson {
   region: string;
 }
 
+const activityIcons: Record<string, React.ReactNode> = {
+  'Telefon': <Phone className="h-4 w-4" />,
+  'Email': <Mail className="h-4 w-4" />,
+  'Toplantı': <Users className="h-4 w-4" />,
+  'Ziyaret': <Building2 className="h-4 w-4" />,
+};
+
+const priorityColors: Record<string, 'info' | 'warning' | 'danger'> = {
+  'Düşük': 'info',
+  'Orta': 'warning',
+  'Yüksek': 'danger',
+};
+
 export default function CRMPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -51,15 +59,12 @@ export default function CRMPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'activities' | 'tasks'>('activities');
-  const [filterRegion, setFilterRegion] = useState('');
-  const [filterPerson, setFilterPerson] = useState('');
-  
-  // Modals
+
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  
+
   const [activityForm, setActivityForm] = useState({
     customer_id: '', sales_person_id: '', type: 'Telefon', title: '', description: '', activity_date: '',
   });
@@ -73,29 +78,34 @@ export default function CRMPage() {
     setLoading(true);
     try {
       const [actRes, taskRes, custRes, teamRes] = await Promise.all([
-        supabase.from('crm_activities').select('*').order('activity_date', { ascending: false }),
-        supabase.from('crm_tasks').select('*').order('due_date', { ascending: true }),
-  useEffect(() => { fetchData(); }, []);
-
-  const handleFilterChange = (filters: { region: string; department: string; repId: string }) => {
-    setFilterRegion(filters.region);
-    setFilterPerson(filters.repId);
+        supabase.from('crm_activities').select('id,customer_id,sales_person_id,type,title,description,activity_date').order('activity_date', { ascending: false }),
+        supabase.from('crm_tasks').select('id,customer_id,sales_person_id,title,description,due_date,priority,status').order('due_date', { ascending: true }),
+        supabase.from('customers').select('id, name').order('name'),
+        supabase.from('sales_team').select('id, name, region'),
+      ]);
+      setActivities(actRes.data || []);
+      setTasks(taskRes.data || []);
+      setCustomers(custRes.data || []);
+      setSalesTeam(teamRes.data || []);
+    } catch (err: any) {
+      console.error('Veri çekme hatası:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Filtreleme
-  const filteredActivities = activities.filter(a => {
-    const matchPerson = !filterPerson || a.sales_person_id === filterPerson;
-    const matchRegion = !filterRegion || (a.sales_team?.region === filterRegion);
-    return matchPerson && matchRegion;
-  });
+  useEffect(() => { fetchData(); }, []);
 
-  const filteredTasks = tasks.filter(t => {
-    const matchPerson = !filterPerson || t.sales_person_id === filterPerson;
-    const matchRegion = !filterRegion || (t.sales_team?.region === filterRegion);
-    return matchPerson && matchRegion;
-  });
+  const getCustomerName = (id: string | null) => {
+    if (!id) return '-';
+    return customers.find(c => c.id === id)?.name || '-';
+  };
 
-  // Activity Modal
+  const getAssignedName = (id: string | null) => {
+    if (!id) return '-';
+    return salesTeam.find(s => s.id === id)?.name || '-';
+  };
+
   const openActivityModal = (activity?: Activity) => {
     if (activity) {
       setEditingActivity(activity);
@@ -115,14 +125,23 @@ export default function CRMPage() {
     if (!activityForm.title) { alert('Başlık zorunludur'); return; }
     setSaving(true);
     try {
-      const dataToSave = { ...activityForm, customer_id: activityForm.customer_id || null, sales_person_id: activityForm.sales_person_id || null };
+      const dataToSave = {
+        type: activityForm.type,
+        title: activityForm.title,
+        description: activityForm.description || null,
+        activity_date: activityForm.activity_date || null,
+        customer_id: activityForm.customer_id || null,
+        sales_person_id: activityForm.sales_person_id || null,
+      };
       if (editingActivity) {
-        await supabase.from('crm_activities').update(dataToSave).eq('id', editingActivity.id);
+        const { error } = await supabase.from('crm_activities').update(dataToSave).eq('id', editingActivity.id);
+        if (error) { alert('Güncelleme hatası: ' + error.message); return; }
       } else {
-        await supabase.from('crm_activities').insert([dataToSave]);
+        const { error } = await supabase.from('crm_activities').insert([dataToSave]);
+        if (error) { alert('Kayıt hatası: ' + error.message); return; }
       }
       setActivityModalOpen(false);
-      fetchData();
+      await fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);
     } finally {
@@ -136,7 +155,6 @@ export default function CRMPage() {
     fetchData();
   };
 
-  // Task Modal
   const openTaskModal = (task?: Task) => {
     if (task) {
       setEditingTask(task);
@@ -156,14 +174,24 @@ export default function CRMPage() {
     if (!taskForm.title) { alert('Başlık zorunludur'); return; }
     setSaving(true);
     try {
-      const dataToSave = { ...taskForm, customer_id: taskForm.customer_id || null, sales_person_id: taskForm.sales_person_id || null };
+      const dataToSave = {
+        title: taskForm.title,
+        description: taskForm.description || null,
+        due_date: taskForm.due_date || null,
+        priority: taskForm.priority,
+        status: taskForm.status,
+        customer_id: taskForm.customer_id || null,
+        sales_person_id: taskForm.sales_person_id || null,
+      };
       if (editingTask) {
-        await supabase.from('crm_tasks').update(dataToSave).eq('id', editingTask.id);
+        const { error } = await supabase.from('crm_tasks').update(dataToSave).eq('id', editingTask.id);
+        if (error) { alert('Güncelleme hatası: ' + error.message); return; }
       } else {
-        await supabase.from('crm_tasks').insert([dataToSave]);
+        const { error } = await supabase.from('crm_tasks').insert([dataToSave]);
+        if (error) { alert('Kayıt hatası: ' + error.message); return; }
       }
       setTaskModalOpen(false);
-      fetchData();
+      await fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);
     } finally {
@@ -177,68 +205,46 @@ export default function CRMPage() {
     fetchData();
   };
 
-  const getAssignedName = (id: string | null) => {
-    if (!id) return '-';
-    const person = salesTeam.find(s => s.id === id);
-    return person?.name || '-';
-  };
-
-  const activityIcons: Record<string, any> = {
-    'Telefon': <Phone className="h-4 w-4" />,
-    'Email': <Mail className="h-4 w-4" />,
-    'Toplantı': <Users className="h-4 w-4" />,
-    'Ziyaret': <Building2 className="h-4 w-4" />,
-    'Demo': <CheckSquare className="h-4 w-4" />,
-  };
-
-  const priorityColors: Record<string, 'danger' | 'warning' | 'info'> = {
-    'Yüksek': 'danger',
-    'Orta': 'warning',
-    'Düşük': 'info',
-  };
-
   if (loading) {
-    return <div><Header title="CRM" /><div className="flex h-96 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" /></div></div>;
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
     <div>
-      <Header title="CRM" />
+      <Header title="CRM" subtitle="Müşteri ilişkileri yönetimi" />
       <div className="p-6">
-        {/* Bölge ve Kişi Filtresi */}
-        <SalesFilter onFilterChange={handleFilterChange} />
-
-        {/* Stats */}
         <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <Card className="p-4"><p className="text-2xl font-bold">{filteredActivities.length}</p><p className="text-xs text-slate-500">Toplam Aktivite</p></Card>
-          <Card className="p-4"><p className="text-2xl font-bold text-blue-600">{filteredTasks.length}</p><p className="text-xs text-slate-500">Toplam Görev</p></Card>
-          <Card className="p-4"><p className="text-2xl font-bold text-amber-600">{filteredTasks.filter(t => t.status === 'Bekliyor').length}</p><p className="text-xs text-slate-500">Bekleyen Görev</p></Card>
-          <Card className="p-4"><p className="text-2xl font-bold text-green-600">{filteredTasks.filter(t => t.status === 'Tamamlandı').length}</p><p className="text-xs text-slate-500">Tamamlanan</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold">{activities.length}</p><p className="text-xs text-slate-500">Toplam Aktivite</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold text-blue-600">{tasks.length}</p><p className="text-xs text-slate-500">Toplam Görev</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold text-amber-600">{tasks.filter(t => t.status === 'Bekliyor').length}</p><p className="text-xs text-slate-500">Bekleyen Görev</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold text-green-600">{tasks.filter(t => t.status === 'Tamamlandı').length}</p><p className="text-xs text-slate-500">Tamamlanan</p></Card>
         </div>
 
-        {/* Tabs */}
         <div className="mb-6 flex gap-2 border-b">
           <button onClick={() => setActiveTab('activities')} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'activities' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>
-            <Calendar className="h-4 w-4 inline mr-1" /> Aktiviteler ({filteredActivities.length})
+            <Calendar className="h-4 w-4 inline mr-1" /> Aktiviteler ({activities.length})
           </button>
           <button onClick={() => setActiveTab('tasks')} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'tasks' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>
-            <CheckSquare className="h-4 w-4 inline mr-1" /> Görevler ({filteredTasks.length})
+            <CheckSquare className="h-4 w-4 inline mr-1" /> Görevler ({tasks.length})
           </button>
         </div>
 
-        {/* Content */}
         {activeTab === 'activities' ? (
           <>
             <div className="mb-4 flex justify-between items-center">
               <h3 className="font-medium">Aktiviteler</h3>
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={fetchData}><RefreshCw className="h-4 w-4" /></Button>
-                <Button onClick={() => openActivityModal()}><Plus className="h-4 w-4" />Yeni Aktivite</Button>
+                <Button onClick={() => openActivityModal()}><Plus className="h-4 w-4 mr-1" />Yeni Aktivite</Button>
               </div>
             </div>
-            {filteredActivities.length > 0 ? (
+            {activities.length > 0 ? (
               <div className="space-y-3">
-                {filteredActivities.map((a) => (
+                {activities.map((a) => (
                   <Card key={a.id}>
                     <CardBody className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
@@ -249,7 +255,7 @@ export default function CRMPage() {
                           <h4 className="font-medium">{a.title}</h4>
                           <div className="flex items-center gap-3 text-xs text-slate-500">
                             <span>{a.type}</span>
-                            {a.customer && <span>• {a.customer.name}</span>}
+                            <span>• {getCustomerName(a.customer_id)}</span>
                             <span>• {getAssignedName(a.sales_person_id)}</span>
                             {a.activity_date && <span>• {new Date(a.activity_date).toLocaleDateString('tr-TR')}</span>}
                           </div>
@@ -264,7 +270,7 @@ export default function CRMPage() {
                 ))}
               </div>
             ) : (
-              <EmptyState icon={<Calendar className="h-16 w-16" />} title="Aktivite bulunamadı" description="Seçilen filtrelere uygun aktivite yok" action={<Button onClick={() => openActivityModal()}><Plus className="h-4 w-4" />Ekle</Button>} />
+              <EmptyState icon={<Calendar className="h-16 w-16" />} title="Aktivite bulunamadı" description="Henüz aktivite eklenmemiş" action={<Button onClick={() => openActivityModal()}><Plus className="h-4 w-4 mr-1" />Ekle</Button>} />
             )}
           </>
         ) : (
@@ -273,12 +279,12 @@ export default function CRMPage() {
               <h3 className="font-medium">Görevler</h3>
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={fetchData}><RefreshCw className="h-4 w-4" /></Button>
-                <Button onClick={() => openTaskModal()}><Plus className="h-4 w-4" />Yeni Görev</Button>
+                <Button onClick={() => openTaskModal()}><Plus className="h-4 w-4 mr-1" />Yeni Görev</Button>
               </div>
             </div>
-            {filteredTasks.length > 0 ? (
+            {tasks.length > 0 ? (
               <div className="space-y-3">
-                {filteredTasks.map((t) => (
+                {tasks.map((t) => (
                   <Card key={t.id}>
                     <CardBody className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
@@ -289,7 +295,7 @@ export default function CRMPage() {
                           <h4 className="font-medium">{t.title}</h4>
                           <div className="flex items-center gap-3 text-xs text-slate-500">
                             <Badge variant={priorityColors[t.priority] || 'info'}>{t.priority}</Badge>
-                            {t.customer && <span>• {t.customer.name}</span>}
+                            <span>• {getCustomerName(t.customer_id)}</span>
                             <span>• {getAssignedName(t.sales_person_id)}</span>
                             {t.due_date && <span>• {new Date(t.due_date).toLocaleDateString('tr-TR')}</span>}
                           </div>
@@ -305,13 +311,12 @@ export default function CRMPage() {
                 ))}
               </div>
             ) : (
-              <EmptyState icon={<CheckSquare className="h-16 w-16" />} title="Görev bulunamadı" description="Seçilen filtrelere uygun görev yok" action={<Button onClick={() => openTaskModal()}><Plus className="h-4 w-4" />Ekle</Button>} />
+              <EmptyState icon={<CheckSquare className="h-16 w-16" />} title="Görev bulunamadı" description="Henüz görev eklenmemiş" action={<Button onClick={() => openTaskModal()}><Plus className="h-4 w-4 mr-1" />Ekle</Button>} />
             )}
           </>
         )}
       </div>
 
-      {/* Activity Modal */}
       <Modal isOpen={activityModalOpen} onClose={() => setActivityModalOpen(false)} title={editingActivity ? 'Aktivite Düzenle' : 'Yeni Aktivite'}
         footer={<><Button variant="secondary" onClick={() => setActivityModalOpen(false)}>İptal</Button><Button onClick={handleSaveActivity} disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</Button></>}>
         <div className="space-y-4">
@@ -331,7 +336,6 @@ export default function CRMPage() {
         </div>
       </Modal>
 
-      {/* Task Modal */}
       <Modal isOpen={taskModalOpen} onClose={() => setTaskModalOpen(false)} title={editingTask ? 'Görev Düzenle' : 'Yeni Görev'}
         footer={<><Button variant="secondary" onClick={() => setTaskModalOpen(false)}>İptal</Button><Button onClick={handleSaveTask} disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</Button></>}>
         <div className="space-y-4">
