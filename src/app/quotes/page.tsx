@@ -91,7 +91,7 @@ export default function QuotesPage() {
     setLoading(true);
     try {
       const [quotesRes, customersRes, productsRes] = await Promise.all([
-        supabase.from('quotes').select('*, customer:customers(name)').order('created_at', { ascending: false }),
+        supabase.from('quotes').select('*').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name').order('name'),
         supabase.from('products').select('id, name, price, tax_rate, unit').eq('status', 'active'),
       ]);
@@ -393,7 +393,7 @@ export default function QuotesPage() {
                             {quote.quote_number}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-medium">{quote.customer?.name}</td>
+                        <td className="px-4 py-3 font-medium">{customers.find(c => c.id === quote.customer_id)?.name || '-'}</td>
                         <td className="px-4 py-3 text-slate-600">{quote.subject || '-'}</td>
                         <td className="px-4 py-3 text-right font-semibold">₺{formatMoney(quote.total)}</td>
                         <td className="px-4 py-3 text-center">
