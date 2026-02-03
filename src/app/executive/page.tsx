@@ -9,6 +9,7 @@ import {
   PieChart, BarChart3, Zap, Eye, Calendar, Building2
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart as RechartsPie, Pie, Cell,
@@ -99,6 +100,7 @@ function HealthGauge({ score, label, size = 'md' }: { score: number; label: stri
 
 // ============ MAIN COMPONENT ============
 export default function ExecutiveDashboard() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [health, setHealth] = useState<CompanyHealth>({
     overallScore: 0,
@@ -378,7 +380,7 @@ export default function ExecutiveDashboard() {
 
         {/* KPI Cards */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+          <Card className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/opportunities')}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-100 text-sm">Toplam Satış</p>
@@ -391,7 +393,7 @@ export default function ExecutiveDashboard() {
             </div>
           </Card>
 
-          <Card className="p-5 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
+          <Card className="p-5 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/collections')}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-emerald-100 text-sm">Tahsilat</p>
@@ -404,7 +406,7 @@ export default function ExecutiveDashboard() {
             </div>
           </Card>
 
-          <Card className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+          <Card className="p-5 bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/opportunities')}>
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-purple-100 text-sm">Pipeline</p>
@@ -415,7 +417,7 @@ export default function ExecutiveDashboard() {
             </div>
           </Card>
 
-          <Card className={`p-5 ${kpis.hardStopCount > 0 ? 'bg-gradient-to-br from-red-500 to-red-600' : 'bg-gradient-to-br from-slate-500 to-slate-600'} text-white`}>
+          <Card className={`p-5 cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200 ${kpis.hardStopCount > 0 ? 'bg-gradient-to-br from-red-500 to-red-600' : 'bg-gradient-to-br from-slate-500 to-slate-600'} text-white`} onClick={() => router.push('/team')}>
             <div className="flex items-center justify-between">
               <div>
                 <p className={`${kpis.hardStopCount > 0 ? 'text-red-100' : 'text-slate-100'} text-sm`}>HARD STOP</p>
@@ -529,24 +531,24 @@ export default function ExecutiveDashboard() {
 
         {/* Quick Stats */}
         <div className="grid gap-4 md:grid-cols-4">
-          <Card className="p-4 text-center">
+          <Card className="p-4 text-center cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/team')}>
             <Users className="h-8 w-8 mx-auto text-blue-500 mb-2" />
             <p className="text-2xl font-bold text-slate-900">{kpis.teamCount}</p>
             <p className="text-sm text-slate-500">Aktif Ekip</p>
           </Card>
-          <Card className="p-4 text-center">
+          <Card className="p-4 text-center cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/customers')}>
             <Building2 className="h-8 w-8 mx-auto text-purple-500 mb-2" />
             <p className="text-2xl font-bold text-slate-900">{kpis.activeCustomers}</p>
             <p className="text-sm text-slate-500">Aktif Müşteri</p>
           </Card>
-          <Card className="p-4 text-center">
+          <Card className="p-4 text-center cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/opportunities')}>
             <CheckCircle className="h-8 w-8 mx-auto text-green-500 mb-2" />
             <p className="text-2xl font-bold text-slate-900">
               %{kpis.totalTarget > 0 ? ((kpis.totalSales / kpis.totalTarget) * 100).toFixed(0) : 0}
             </p>
             <p className="text-sm text-slate-500">Hedef Gerçekleşme</p>
           </Card>
-          <Card className="p-4 text-center">
+          <Card className="p-4 text-center cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/collections')}>
             <Zap className="h-8 w-8 mx-auto text-amber-500 mb-2" />
             <p className="text-2xl font-bold text-slate-900">
               %{kpis.collectionTarget > 0 ? ((kpis.totalCollection / kpis.collectionTarget) * 100).toFixed(0) : 0}
