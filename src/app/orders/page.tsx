@@ -95,7 +95,7 @@ export default function OrdersPage() {
     setLoading(true);
     try {
       const [ordersRes, customersRes, productsRes] = await Promise.all([
-        supabase.from('orders').select('*, customer:customers(name)').order('created_at', { ascending: false }),
+       supabase.from('orders').select('*').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name, address').order('name'),
         supabase.from('products').select('id, name, price, tax_rate').eq('status', 'active'),
       ]);
@@ -409,7 +409,7 @@ export default function OrdersPage() {
                               {order.order_number}
                             </span>
                           </td>
-                          <td className="px-4 py-3 font-medium">{order.customer?.name}</td>
+                          <td className="px-4 py-3 font-medium">{customers.find(c => c.id === order.customer_id)?.name || '-'}</td>
                           <td className="px-4 py-3 text-right font-semibold">₺{formatMoney(order.total)}</td>
                           <td className="px-4 py-3 text-center">
                             <Badge variant={statusConfig[order.status]?.variant || 'default'}>
