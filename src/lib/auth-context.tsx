@@ -63,16 +63,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     getSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // ÖNEMLİ: Bu dinleyici içinde Supabase çağrısı BEKLENMEMELİ (await).
+    // Oturum kilidi tutulurken yapılan sorgu kilitlenmeye yol açar ve sonraki
+    // tüm istekler (kayıt, liste vb.) askıda kalır. Profil sorgusu kilit
+    // bırakıldıktan sonra çalışsın diye setTimeout ile erteleniyor.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        const profileData = await fetchProfile(session.user.id);
-        setProfile(profileData);
-      } else {
+
+      if (!session?.user) {
         setProfile(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      // Token yenilemelerinde profil değişmez; tekrar sorgulamaya gerek yok
+      if (event === 'TOKEN_REFRESHED') {
+        setLoading(false);
+        return;
+      }
+
+      const userId = session.user.id;
+      setTimeout(async () => {
+        const profileData = await fetchProfile(userId);
+        setProfile(profileData);
+        setLoading(false);
+      }, 0);
     });
 
     return () => subscription.unsubscribe();
