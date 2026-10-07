@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Sel
 import { Swords, Plus, Edit2, Trash2, RefreshCw, Search, Globe, TrendingUp, TrendingDown, Minus, Eye } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { cleanPayload } from '@/lib/utils';
 
 interface Competitor {
   id: string;
@@ -132,9 +133,9 @@ export default function CompetitorsPage() {
     setSaving(true);
     try {
       if (editingCompetitor) {
-        await supabase.from('competitors').update(formData).eq('id', editingCompetitor.id);
+        { const { error: dbErr } = await supabase.from('competitors').update(cleanPayload(formData)).eq('id', editingCompetitor.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('competitors').insert([formData]);
+        { const { error: dbErr } = await supabase.from('competitors').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchCompetitors();

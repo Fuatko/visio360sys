@@ -3,7 +3,7 @@
 import Header from '@/components/Header';
 import SalesFilter from '@/components/SalesFilter';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, EmptyState } from '@/components/ui';
-import { formatMoney } from '@/lib/utils';
+import { formatMoney, cleanPayload } from '@/lib/utils';
 import { Target, Plus, Edit2, Trash2, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -86,9 +86,9 @@ export default function TargetsPage() {
     setSaving(true);
     try {
       if (editingTarget) {
-        await supabase.from('targets').update(formData).eq('id', editingTarget.id);
+        { const { error: dbErr } = await supabase.from('targets').update(cleanPayload(formData)).eq('id', editingTarget.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('targets').insert([formData]);
+        { const { error: dbErr } = await supabase.from('targets').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchData();

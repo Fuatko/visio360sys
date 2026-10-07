@@ -63,3 +63,14 @@ export function getActivityIcon(type: string): string {
   };
   return icons[type] || '📋';
 }
+
+// Formdan gelen boş metinleri null yapar (boş tarih / kimlik alanları veritabanında hata verir)
+export function cleanPayload<T>(payload: T): T {
+  const cleanOne = (obj: any) => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+    const out: any = {};
+    for (const [k, v] of Object.entries(obj)) out[k] = v === '' ? null : v;
+    return out;
+  };
+  return (Array.isArray(payload) ? payload.map(cleanOne) : cleanOne(payload)) as T;
+}

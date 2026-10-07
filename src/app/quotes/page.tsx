@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
-import { formatMoney, formatDate } from '@/lib/utils';
+import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
 import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -209,7 +209,7 @@ export default function QuotesPage() {
         total: item.quantity * item.unit_price * (1 - item.discount / 100),
       }));
 
-      await supabase.from('quote_items').insert(quoteItems);
+      { const { error: dbErr } = await supabase.from('quote_items').insert(cleanPayload(quoteItems)); if (dbErr) throw dbErr; }
 
       setModalOpen(false);
       fetchData();
@@ -222,7 +222,7 @@ export default function QuotesPage() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      await supabase.from('quotes').update({ status }).eq('id', id);
+      { const { error: dbErr } = await supabase.from('quotes').update(cleanPayload({ status })).eq('id', id); if (dbErr) throw dbErr; }
       fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);

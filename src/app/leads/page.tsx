@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
-import { formatDate } from '@/lib/utils';
+import { formatDate, cleanPayload } from '@/lib/utils';
 import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building2, ArrowRight, Star, TrendingUp } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -92,7 +92,7 @@ export default function LeadsPage() {
     setLoading(true);
     try {
       const [leadsRes, teamRes] = await Promise.all([
-        supabase.from('leads').select('*, sales_person:sales_team(name)').order('created_at', { ascending: false }),
+        supabase.from('leads').select('*, sales_person:assigned_to(name)').order('created_at', { ascending: false }),
         supabase.from('sales_team').select('id, name').eq('status', 'active').order('name'),
       ]);
       
@@ -149,9 +149,9 @@ export default function LeadsPage() {
     setSaving(true);
     try {
       if (editingLead) {
-        await supabase.from('leads').update(formData).eq('id', editingLead.id);
+        { const { error: dbErr } = await supabase.from('leads').update(cleanPayload(formData)).eq('id', editingLead.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('leads').insert([formData]);
+        { const { error: dbErr } = await supabase.from('leads').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchData();
@@ -174,7 +174,7 @@ export default function LeadsPage() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      await supabase.from('leads').update({ status, last_contact: new Date().toISOString() }).eq('id', id);
+      { const { error: dbErr } = await supabase.from('leads').update(cleanPayload({ status, last_contact: new Date().toISOString() })).eq('id', id); if (dbErr) throw dbErr; }
       fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);
@@ -199,7 +199,7 @@ export default function LeadsPage() {
       if (error) throw error;
 
       // Lead'i kazanıldı olarak işaretle
-      await supabase.from('leads').update({ status: 'won' }).eq('id', selectedLead.id);
+      { const { error: dbErr } = await supabase.from('leads').update(cleanPayload({ status: 'won' })).eq('id', selectedLead.id); if (dbErr) throw dbErr; }
 
       setConvertModalOpen(false);
       setSelectedLead(null);

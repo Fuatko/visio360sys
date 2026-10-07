@@ -3,7 +3,7 @@
 import Header from '@/components/Header';
 import SalesFilter from '@/components/SalesFilter';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, EmptyState } from '@/components/ui';
-import { formatMoney } from '@/lib/utils';
+import { formatMoney, cleanPayload } from '@/lib/utils';
 import { Wallet, Plus, Edit2, Trash2, RefreshCw, Building2, Calendar, User } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -102,9 +102,9 @@ export default function CollectionsPage() {
         payment_date: formData.payment_date || null 
       };
       if (editingColl) {
-        await supabase.from('collections').update(dataToSave).eq('id', editingColl.id);
+        { const { error: dbErr } = await supabase.from('collections').update(cleanPayload(dataToSave)).eq('id', editingColl.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('collections').insert([dataToSave]);
+        { const { error: dbErr } = await supabase.from('collections').insert(cleanPayload([dataToSave])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchData();

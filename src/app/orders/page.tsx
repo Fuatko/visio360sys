@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
-import { formatMoney, formatDate } from '@/lib/utils';
+import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
 import { ShoppingCart, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Truck, CheckCircle, XCircle, Package, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -224,7 +224,7 @@ export default function OrdersPage() {
         total: item.quantity * item.unit_price * (1 - item.discount / 100),
       }));
 
-      await supabase.from('order_items').insert(orderItems);
+      { const { error: dbErr } = await supabase.from('order_items').insert(cleanPayload(orderItems)); if (dbErr) throw dbErr; }
 
       setModalOpen(false);
       fetchData();
@@ -241,7 +241,7 @@ export default function OrdersPage() {
       if (status === 'delivered') {
         updateData.delivery_date = new Date().toISOString();
       }
-      await supabase.from('orders').update(updateData).eq('id', id);
+      { const { error: dbErr } = await supabase.from('orders').update(cleanPayload(updateData)).eq('id', id); if (dbErr) throw dbErr; }
       fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);

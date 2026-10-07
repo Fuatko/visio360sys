@@ -3,7 +3,7 @@
 import Header from '@/components/Header';
 import SalesFilter from '@/components/SalesFilter';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui';
-import { formatMoney } from '@/lib/utils';
+import { formatMoney, cleanPayload } from '@/lib/utils';
 import { Building2, Plus, Edit2, Trash2, Mail, Phone, User, RefreshCw, Search } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -96,9 +96,9 @@ export default function CustomersPage() {
     try {
       const dataToSave = { ...formData, assigned_to: formData.assigned_to || null };
       if (editingCustomer) {
-        await supabase.from('customers').update(dataToSave).eq('id', editingCustomer.id);
+        { const { error: dbErr } = await supabase.from('customers').update(cleanPayload(dataToSave)).eq('id', editingCustomer.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('customers').insert([dataToSave]);
+        { const { error: dbErr } = await supabase.from('customers').insert(cleanPayload([dataToSave])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchData();

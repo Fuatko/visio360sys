@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, Textarea } from '@/components/ui';
-import { formatDate } from '@/lib/utils';
+import { formatDate, cleanPayload } from '@/lib/utils';
 import { Calendar as CalendarIcon, Plus, Edit2, Trash2, RefreshCw, ChevronLeft, ChevronRight, MapPin, Clock, User, Building2, Phone, Video } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -82,7 +82,7 @@ export default function CalendarPage() {
     setLoading(true);
     try {
       const [eventsRes, customersRes, teamRes] = await Promise.all([
-        supabase.from('calendar_events').select('*, customer:customers(name), sales_person:sales_team(name)').order('start_date'),
+        supabase.from('calendar_events').select('*, customer:customer_id(name), sales_person:sales_person_id(name)').order('start_date'),
         supabase.from('customers').select('id, name').order('name'),
         supabase.from('sales_team').select('id, name').eq('status', 'active').order('name'),
       ]);
@@ -188,9 +188,9 @@ export default function CalendarPage() {
       };
 
       if (editingEvent) {
-        await supabase.from('calendar_events').update(eventData).eq('id', editingEvent.id);
+        { const { error: dbErr } = await supabase.from('calendar_events').update(cleanPayload(eventData)).eq('id', editingEvent.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('calendar_events').insert([eventData]);
+        { const { error: dbErr } = await supabase.from('calendar_events').insert(cleanPayload([eventData])); if (dbErr) throw dbErr; }
       }
 
       setModalOpen(false);
@@ -212,7 +212,7 @@ export default function CalendarPage() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      await supabase.from('calendar_events').update({ status }).eq('id', id);
+      { const { error: dbErr } = await supabase.from('calendar_events').update(cleanPayload({ status })).eq('id', id); if (dbErr) throw dbErr; }
       fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);

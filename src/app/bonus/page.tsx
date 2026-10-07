@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, EmptyState, ProgressBar } from '@/components/ui';
-import { formatMoney } from '@/lib/utils';
+import { formatMoney, cleanPayload } from '@/lib/utils';
 import { 
   Award, Calculator, Settings, Users, TrendingUp, AlertTriangle, Play, DollarSign,
   Check, X, RefreshCw, Plus, Edit2, Trash2, Save, Upload, Download, FileSpreadsheet,
@@ -439,7 +439,7 @@ export default function CommissionAdminPage() {
   const archiveConfig = async (id: string) => {
     if (!confirm('Bu konfigürasyonu arşivlemek istediğinize emin misiniz?')) return;
     try {
-      await supabase.from('commission_configs').update({ is_active: false }).eq('id', id);
+      { const { error: dbErr } = await supabase.from('commission_configs').update(cleanPayload({ is_active: false })).eq('id', id); if (dbErr) throw dbErr; }
       fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);
@@ -674,7 +674,7 @@ export default function CommissionAdminPage() {
         updates.approved_at = new Date().toISOString();
       }
       
-      await supabase.from('commission_results').update(updates).eq('id', id);
+      { const { error: dbErr } = await supabase.from('commission_results').update(cleanPayload(updates)).eq('id', id); if (dbErr) throw dbErr; }
       fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);

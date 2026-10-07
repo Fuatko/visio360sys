@@ -72,8 +72,8 @@ export default function SalesAnalyticsPage() {
         .from('opportunities')
         .select(`
           *,
-          owner:sales_team(id, name, department),
-          customer:customers(id, name)
+          owner:assigned_to(id, name, department),
+          customer:customer_id(id, name)
         `)
         .order('created_at', { ascending: false });
 
@@ -254,9 +254,9 @@ export default function SalesAnalyticsPage() {
         .from('opportunities')
         .select(`
           *,
-          customer:customers(name)
+          customer:customer_id(name)
         `)
-        .eq('owner_id', row.id)
+        .eq('assigned_to', row.id)
         .order('created_at', { ascending: false });
 
       setDrilldownData((deals || []).map(d => ({

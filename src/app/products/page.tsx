@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
-import { formatMoney } from '@/lib/utils';
+import { formatMoney , cleanPayload } from '@/lib/utils';
 import { Package, Plus, Edit2, Trash2, RefreshCw, Search, Tag, Layers, BarChart3 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -125,13 +125,13 @@ export default function ProductsPage() {
       if (editingProduct) {
         const { error } = await supabase
           .from('products')
-          .update(formData)
+          .update(cleanPayload(formData))
           .eq('id', editingProduct.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('products')
-          .insert([formData]);
+          .insert(cleanPayload([formData]));
         if (error) throw error;
       }
       setModalOpen(false);

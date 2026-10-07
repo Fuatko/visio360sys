@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea, ProgressBar } from '@/components/ui';
-import { formatMoney, formatDate } from '@/lib/utils';
+import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
 import { Megaphone, Plus, Edit2, Trash2, RefreshCw, Search, Calendar, Target, TrendingUp, Play, Pause, CheckCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -134,9 +134,9 @@ export default function CampaignsPage() {
     setSaving(true);
     try {
       if (editingCampaign) {
-        await supabase.from('campaigns').update(formData).eq('id', editingCampaign.id);
+        { const { error: dbErr } = await supabase.from('campaigns').update(cleanPayload(formData)).eq('id', editingCampaign.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('campaigns').insert([formData]);
+        { const { error: dbErr } = await supabase.from('campaigns').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchCampaigns();
@@ -159,7 +159,7 @@ export default function CampaignsPage() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      await supabase.from('campaigns').update({ status }).eq('id', id);
+      { const { error: dbErr } = await supabase.from('campaigns').update(cleanPayload({ status })).eq('id', id); if (dbErr) throw dbErr; }
       fetchCampaigns();
     } catch (err: any) {
       alert('Hata: ' + err.message);

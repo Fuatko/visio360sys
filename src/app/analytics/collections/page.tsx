@@ -67,8 +67,8 @@ export default function CollectionsAnalyticsPage() {
         .from('collections')
         .select(`
           *,
-          customer:customers(id, name, segment),
-          sales_rep:sales_team(id, name, department)
+          customer:customer_id(id, name),
+          sales_rep:sales_person_id(id, name, department)
         `)
         .order('due_date', { ascending: false });
 
@@ -222,7 +222,7 @@ export default function CollectionsAnalyticsPage() {
         .from('collections')
         .select(`
           *,
-          sales_rep:sales_team(name)
+          sales_rep:sales_person_id(name)
         `)
         .eq('customer_id', row.id)
         .order('due_date', { ascending: false });

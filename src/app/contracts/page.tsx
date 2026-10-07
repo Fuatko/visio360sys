@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
-import { formatMoney, formatDate } from '@/lib/utils';
+import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
 import { FileSignature, Plus, Edit2, Trash2, RefreshCw, Search, AlertTriangle, Clock, CheckCircle, Calendar } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -83,7 +83,7 @@ export default function ContractsPage() {
     setLoading(true);
     try {
       const [contractsRes, customersRes] = await Promise.all([
-        supabase.from('contracts').select('*, customer:customers(name)').order('created_at', { ascending: false }),
+        supabase.from('contracts').select('*, customer:customer_id(name)').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name').order('name'),
       ]);
       
@@ -155,9 +155,9 @@ export default function ContractsPage() {
       };
 
       if (editingContract) {
-        await supabase.from('contracts').update(contractData).eq('id', editingContract.id);
+        { const { error: dbErr } = await supabase.from('contracts').update(cleanPayload(contractData)).eq('id', editingContract.id); if (dbErr) throw dbErr; }
       } else {
-        await supabase.from('contracts').insert([contractData]);
+        { const { error: dbErr } = await supabase.from('contracts').insert(cleanPayload([contractData])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchData();

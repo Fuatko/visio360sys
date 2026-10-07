@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, EmptyState } from '@/components/ui';
-import { formatDate } from '@/lib/utils';
+import { formatDate, cleanPayload } from '@/lib/utils';
 import { Bell, Check, CheckCheck, Trash2, RefreshCw, AlertTriangle, Info, CheckCircle, XCircle, Clock, Filter } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -62,7 +62,7 @@ export default function NotificationsPage() {
 
   const markAsRead = async (id: string) => {
     try {
-      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+      { const { error: dbErr } = await supabase.from('notifications').update(cleanPayload({ is_read: true })).eq('id', id); if (dbErr) throw dbErr; }
       fetchNotifications();
     } catch (err: any) {
       console.error('Hata:', err);
@@ -71,7 +71,7 @@ export default function NotificationsPage() {
 
   const markAllAsRead = async () => {
     try {
-      await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
+      { const { error: dbErr } = await supabase.from('notifications').update(cleanPayload({ is_read: true })).eq('is_read', false); if (dbErr) throw dbErr; }
       fetchNotifications();
     } catch (err: any) {
       console.error('Hata:', err);
@@ -80,7 +80,7 @@ export default function NotificationsPage() {
 
   const dismissNotification = async (id: string) => {
     try {
-      await supabase.from('notifications').update({ is_dismissed: true }).eq('id', id);
+      { const { error: dbErr } = await supabase.from('notifications').update(cleanPayload({ is_dismissed: true })).eq('id', id); if (dbErr) throw dbErr; }
       fetchNotifications();
     } catch (err: any) {
       console.error('Hata:', err);
@@ -90,7 +90,7 @@ export default function NotificationsPage() {
   const clearAll = async () => {
     if (!confirm('Tüm bildirimleri silmek istediğinize emin misiniz?')) return;
     try {
-      await supabase.from('notifications').update({ is_dismissed: true }).eq('is_dismissed', false);
+      { const { error: dbErr } = await supabase.from('notifications').update(cleanPayload({ is_dismissed: true })).eq('is_dismissed', false); if (dbErr) throw dbErr; }
       fetchNotifications();
     } catch (err: any) {
       console.error('Hata:', err);

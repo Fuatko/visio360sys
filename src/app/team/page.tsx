@@ -2,7 +2,7 @@
 
 import Header from '@/components/Header';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, EmptyState } from '@/components/ui';
-import { formatDate } from '@/lib/utils';
+import { formatDate , cleanPayload } from '@/lib/utils';
 import { Users, Plus, Edit2, Trash2, Mail, Phone, MapPin, Calendar, RefreshCw, Camera, User } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -119,14 +119,14 @@ export default function TeamPage() {
       if (editingPerson) {
         const { error } = await supabase
           .from('sales_team')
-          .update(formData)
+          .update(cleanPayload(formData))
           .eq('id', editingPerson.id);
         
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('sales_team')
-          .insert([formData]);
+          .insert(cleanPayload([formData]));
         
         if (error) throw error;
       }

@@ -72,7 +72,7 @@ export default function CommissionAnalyticsPage() {
         .from('commission_results')
         .select(`
           *,
-          sales_rep:sales_team(id, name, department, region)
+          sales_rep:sales_person_id(id, name, department, region)
         `)
         .eq('period_year', year)
         .eq('period_month', month);
