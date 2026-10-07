@@ -1,2 +1,6 @@
 .vercel
 .env*.local
+
+# Derleme çıktıları ve bağımlılıklar
+/node_modules
+/.next
