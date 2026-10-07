@@ -92,12 +92,21 @@ export default function LeadsPage() {
     setLoading(true);
     try {
       const [leadsRes, teamRes] = await Promise.all([
-        supabase.from('leads').select('*, sales_person:assigned_to(name)').order('created_at', { ascending: false }),
-        supabase.from('sales_team').select('id, name').eq('status', 'active').order('name'),
+        supabase.from('leads').select('*').order('created_at', { ascending: false }),
+        supabase.from('sales_team').select('id, name').order('name'),
       ]);
-      
-      setLeads(leadsRes.data || []);
-      setSalesTeam(teamRes.data || []);
+
+      if (leadsRes.error) {
+        console.error('Lead listesi hatası:', leadsRes.error);
+        alert('Lead listesi yüklenemedi: ' + leadsRes.error.message);
+      }
+      const team = teamRes.data || [];
+      // Sorumlu adını ekip listesinden eşle (join'e gerek kalmaz)
+      setLeads((leadsRes.data || []).map((l: any) => ({
+        ...l,
+        sales_person: team.find((t: any) => t.id === l.assigned_to) || null,
+      })));
+      setSalesTeam(team);
     } catch (err: any) {
       console.error('Veri çekme hatası:', err);
     } finally {
@@ -212,8 +221,10 @@ export default function LeadsPage() {
 
   // Filtreleme
   const filteredLeads = leads.filter(l => {
-    const matchSearch = l.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       l.contact_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const q = searchTerm.trim().toLowerCase();
+    const matchSearch = !q ||
+      (l.company_name || '').toLowerCase().includes(q) ||
+      (l.contact_name || '').toLowerCase().includes(q);
     const matchStatus = !filterStatus || l.status === filterStatus;
     return matchSearch && matchStatus;
   });
