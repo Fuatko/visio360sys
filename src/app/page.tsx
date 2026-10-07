@@ -112,11 +112,15 @@ export default function Dashboard() {
         .from('opportunities')
         .select('*');
 
-      // Hedefler
+      // Hedefler (dönem bazlı: period = 'YYYY-MM')
       const { data: targets } = await supabase
-        .from('sales_targets')
-        .select('*')
-        .eq('year', new Date().getFullYear());
+        .from('targets')
+        .select('*');
+
+      // Siparişler (gerçekleşen satış)
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('*');
 
       // Tahsilatlar
       const { data: collections } = await supabase
@@ -127,7 +131,7 @@ export default function Dashboard() {
       const { count: taskCount } = await supabase
         .from('crm_tasks')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
+        .eq('status', 'Bekliyor');
 
       // Aktiviteler
       const { data: activities } = await supabase
@@ -138,26 +142,44 @@ export default function Dashboard() {
 
       setRecentActivities(activities || []);
 
-      // Hesaplamalar
+      // Hesaplamalar - sadece gerçek veri, sahte değer yok
       const opps = opportunities || [];
       const tgts = targets || [];
+      const ords = (orders || []).filter((o: any) => !['İptal', 'cancelled', 'Taslak', 'draft'].includes(o.status));
       const colls = collections || [];
+      const year = String(new Date().getFullYear());
 
-      const totalTarget = tgts.reduce((s, t) => s + (t.target_amount || 0), 0) || 1000000;
-      const totalSales = tgts.reduce((s, t) => s + (t.actual_amount || 0), 0) || 850000;
-      const collectionTarget = totalSales;
-      const totalCollection = colls.filter(c => c.status === 'paid').reduce((s, c) => s + (c.amount || 0), 0) || totalSales * 0.85;
-      
-      const wonOpps = opps.filter(o => o.stage === 'won');
-      const pipelineValue = opps.filter(o => o.stage !== 'lost' && o.stage !== 'won').reduce((s, o) => s + (o.value || 0), 0);
+      const isPaid = (c: any) => c.status === 'Ödendi' || c.status === 'paid';
+      const isWon = (o: any) => ['Kazanıldı', 'Kapanış', 'won'].includes(o.stage);
+      const isLost = (o: any) => ['Kaybedildi', 'lost'].includes(o.stage);
+      const orderTotal = (o: any) => Number(o.total ?? o.total_amount ?? o.grand_total ?? 0);
+      const orderDate = (o: any) => o.order_date || o.created_at;
+
+      const yearTargets = tgts.filter((t: any) => String(t.period || '').startsWith(year));
+      const totalTarget = yearTargets.reduce((s: number, t: any) => s + Number(t.sales_target || 0), 0);
+      const yearOrders = ords.filter((o: any) => String(orderDate(o) || '').startsWith(year));
+      const totalSales = yearOrders.reduce((s: number, o: any) => s + orderTotal(o), 0);
+      const collectionTarget = colls.reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+      const totalCollection = colls.filter(isPaid).reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+
+      const wonOpps = opps.filter(isWon);
+      const openOpps = opps.filter((o: any) => !isWon(o) && !isLost(o));
+      const pipelineValue = openOpps.reduce((s: number, o: any) => s + Number(o.value || 0), 0);
+
+      // Bu ay eklenen müşteri sayısı
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+      const { count: newCustomerCount } = await supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', monthStart);
 
       // Hard stop risk - tahsilat %70 altında olanlar
-      const hardStopRisk = teamData?.filter(t => {
-        const repColls = colls.filter(c => c.sales_rep_id === t.id);
-        const repInvoiced = repColls.reduce((s, c) => s + (c.amount || 0), 0);
-        const repCollected = repColls.filter(c => c.status === 'paid').reduce((s, c) => s + (c.amount || 0), 0);
+      const hardStopRisk = (teamData || []).filter((t: any) => {
+        const repColls = colls.filter((c: any) => c.sales_person_id === t.id);
+        const repInvoiced = repColls.reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+        const repCollected = repColls.filter(isPaid).reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
         return repInvoiced > 0 && (repCollected / repInvoiced) < 0.7;
-      }).length || 0;
+      }).length;
 
       setStats({
         totalSales,
@@ -168,8 +190,8 @@ export default function Dashboard() {
         collectionRatio: collectionTarget > 0 ? totalCollection / collectionTarget : 0,
         pipelineValue,
         customerCount: customerCount || 0,
-        newCustomers: 5, // Demo
-        opportunityCount: opps.length,
+        newCustomers: newCustomerCount || 0,
+        opportunityCount: openOpps.length,
         wonOpportunities: wonOpps.length,
         pendingTasks: taskCount || 0,
         teamCount: teamData?.length || 0,
@@ -177,47 +199,46 @@ export default function Dashboard() {
       });
 
       // Top fırsatlar
-      const topOpps = opps
-        .filter(o => o.stage !== 'lost' && o.stage !== 'won')
-        .sort((a, b) => (b.value || 0) - (a.value || 0))
+      const topOpps = [...openOpps]
+        .sort((a: any, b: any) => Number(b.value || 0) - Number(a.value || 0))
         .slice(0, 5);
       setTopOpportunities(topOpps);
 
-      // Aylık trend verisi (demo)
+      // Aylık trend - son 6 ay, gerçek veriden
       const monthlyTrend = [];
-      const currentMonth = new Date().getMonth();
+      const now = new Date();
       for (let i = 5; i >= 0; i--) {
-        const m = (currentMonth - i + 12) % 12;
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         monthlyTrend.push({
-          month: MONTHS[m],
-          satış: Math.round(totalSales / 6 * (0.8 + Math.random() * 0.4)),
-          hedef: Math.round(totalTarget / 6),
-          tahsilat: Math.round(totalCollection / 6 * (0.75 + Math.random() * 0.3)),
+          month: MONTHS[d.getMonth()],
+          satış: ords.filter((o: any) => String(orderDate(o) || '').startsWith(key)).reduce((s: number, o: any) => s + orderTotal(o), 0),
+          hedef: tgts.filter((t: any) => String(t.period || '').startsWith(key)).reduce((s: number, t: any) => s + Number(t.sales_target || 0), 0),
+          tahsilat: colls.filter((c: any) => isPaid(c) && String(c.payment_date || '').startsWith(key)).reduce((s: number, c: any) => s + Number(c.amount || 0), 0),
         });
       }
       setMonthlyData(monthlyTrend);
 
-      // Takım performansı
-      const teamPerf = (teamData || []).slice(0, 6).map(t => {
-        const repTarget = tgts.find(tg => tg.person_id === t.id);
-        const target = repTarget?.target_amount || 100000;
-        const actual = repTarget?.actual_amount || Math.round(target * (0.7 + Math.random() * 0.5));
+      // Takım performansı - bu yılın hedefi ve gerçekleşen siparişleri
+      const teamPerf = (teamData || []).slice(0, 6).map((t: any) => {
+        const target = yearTargets.filter((tg: any) => tg.sales_person_id === t.id).reduce((s: number, tg: any) => s + Number(tg.sales_target || 0), 0);
+        const actual = yearOrders.filter((o: any) => o.sales_person_id === t.id).reduce((s: number, o: any) => s + orderTotal(o), 0);
         return {
-          name: t.name.split(' ')[0],
+          name: (t.name || '').split(' ')[0],
           hedef: target,
           gerçekleşen: actual,
-          oran: Math.round(actual / target * 100),
+          oran: target > 0 ? Math.round(actual / target * 100) : 0,
         };
       });
       setTeamPerformance(teamPerf);
 
-      // Pipeline dağılımı
-      const stages = ['Yeni', 'Görüşme', 'Teklif', 'Müzakere'];
-      const pipelineDist = stages.map(stage => ({
-        name: stage,
-        value: opps.filter(o => o.stage?.toLowerCase().includes(stage.toLowerCase())).length || Math.floor(Math.random() * 10) + 2,
-      }));
-      setPipelineData(pipelineDist);
+      // Pipeline dağılımı - açık fırsatların aşamaya göre sayısı
+      const stageCounts: Record<string, number> = {};
+      openOpps.forEach((o: any) => {
+        const st = o.stage || 'Belirsiz';
+        stageCounts[st] = (stageCounts[st] || 0) + 1;
+      });
+      setPipelineData(Object.entries(stageCounts).map(([name, value]) => ({ name, value })));
 
     } catch (err) {
       console.error('Dashboard veri hatası:', err);
