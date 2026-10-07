@@ -51,8 +51,8 @@ function AchievementBadge({ type }: { type: string }) {
 // ============ RANK CHANGE INDICATOR ============
 function RankChange({ current, previous }: { current: number; previous: number }) {
   const diff = previous - current;
-  
-  if (diff === 0) {
+
+  if (!previous || diff === 0) {
     return <span className="text-slate-400">—</span>;
   }
   
@@ -182,13 +182,12 @@ export default function LeaderboardPage() {
         if (collectionRate >= 95) badges.push('collector');
         if (wonOpportunities >= 5) badges.push('closer');
 
-        // Simulate streak (in real app, this would be calculated from historical data)
-        const streak = Math.floor(Math.random() * 6);
-        if (streak >= 5) badges.push('streak_5');
+        // Seri: geçmiş dönem verisi tutulmadığı için 0 (uydurma değer gösterilmez)
+        const streak = 0;
 
         return {
           rank: 0,
-          previousRank: Math.floor(Math.random() * team.length) + 1, // Simulated
+          previousRank: 0, // Geçmiş sıralama verisi yok
           personId: person.id,
           personName: person.name,
           department: person.department || 'Satış',

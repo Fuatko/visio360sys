@@ -141,7 +141,7 @@ export default function ExecutiveDashboard() {
         supabase.from('collections').select('*'),
         supabase.from('opportunities').select('*'),
         supabase.from('sales_team').select('*').eq('is_active', true),
-        supabase.from('customers').select('*').eq('status', 'Aktif'),
+        supabase.from('customers').select('*'),
         supabase.from('commission_results').select('*')
       ]);
 
@@ -153,8 +153,8 @@ export default function ExecutiveDashboard() {
       const commissions = commissionRes.data || [];
 
       // Calculate KPIs
-      const totalSales = targets.reduce((sum, t) => sum + (t.actual_sales || 0), 0);
-      const totalTarget = targets.reduce((sum, t) => sum + (t.target_amount || 0), 0);
+      const totalSales = targets.reduce((sum, t) => sum + Number(t.achieved_sales || t.actual_sales || 0), 0);
+      const totalTarget = targets.reduce((sum, t) => sum + Number(t.sales_target || t.target_amount || 0), 0);
       const totalCollection = collections.filter(c => c.status === 'Ödendi').reduce((sum, c) => sum + (c.amount || 0), 0);
       const collectionTarget = collections.reduce((sum, c) => sum + (c.amount || 0), 0);
       const pipelineValue = opportunities.filter(o => o.stage !== 'Kaybedildi' && o.stage !== 'Kazanıldı')
@@ -264,10 +264,8 @@ export default function ExecutiveDashboard() {
         const month = date.getMonth();
         const year = date.getFullYear();
         
-        const monthTargets = targets.filter(t => {
-          const tDate = new Date(t.created_at);
-          return tDate.getMonth() === month && tDate.getFullYear() === year;
-        });
+        const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+        const monthTargets = targets.filter(t => String(t.period || '').startsWith(monthKey));
         
         const monthCollections = collections.filter(c => {
           if (!c.payment_date) return false;
@@ -277,8 +275,8 @@ export default function ExecutiveDashboard() {
 
         monthlyData.push({
           name: MONTHS[month],
-          sales: monthTargets.reduce((sum, t) => sum + (t.actual_sales || 0), 0),
-          target: monthTargets.reduce((sum, t) => sum + (t.target_amount || 0), 0),
+          sales: monthTargets.reduce((sum, t) => sum + Number(t.achieved_sales || t.actual_sales || 0), 0),
+          target: monthTargets.reduce((sum, t) => sum + Number(t.sales_target || t.target_amount || 0), 0),
           collection: monthCollections.reduce((sum, c) => sum + (c.amount || 0), 0)
         });
       }

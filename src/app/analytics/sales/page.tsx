@@ -112,16 +112,13 @@ export default function SalesAnalyticsPage() {
       ]);
 
       // Build funnel data
-      const stages = ['Yeni', 'Görüşme', 'Teklif', 'Müzakere', 'Kazanıldı'];
-      const stageCounts = stages.map(stage => {
-        const stageOpps = opps.filter(o => 
-          (o.stage || '').toLowerCase().includes(stage.toLowerCase()) ||
-          o.stage === stage
-        );
+      const stages = Array.from(new Set(opps.map((o: any) => o.stage || 'Belirsiz')));
+      const stageCounts = stages.map((stage: string) => {
+        const stageOpps = opps.filter((o: any) => (o.stage || 'Belirsiz') === stage);
         return {
           stage,
           count: stageOpps.length,
-          value: stageOpps.reduce((s, o) => s + (o.value || 0), 0),
+          value: stageOpps.reduce((s: number, o: any) => s + Number(o.value || 0), 0),
           fill: STAGE_COLORS[stage] || '#94a3b8',
         };
       });
@@ -219,17 +216,19 @@ export default function SalesAnalyticsPage() {
         win_rate: (grandWon + grandLost) > 0 ? grandWon / (grandWon + grandLost) : 0,
       });
 
-      // Trend data
+      // Trend data - son 6 ay, gerçek veriden
       const MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
-      const currentMonth = new Date().getMonth();
       const trend = [];
       for (let i = 5; i >= 0; i--) {
-        const m = (currentMonth - i + 12) % 12;
+        const d = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const inMonth = (o: any, field: string) => String(o[field] || o.created_at || '').startsWith(key);
+        const monthWon = wonOpps.filter((o: any) => inMonth(o, 'closed_at'));
         trend.push({
-          month: MONTHS[m],
-          satış: Math.round(bookings / 6 * (0.7 + Math.random() * 0.6)),
-          pipeline: Math.round(pipelineValue / 6 * (0.8 + Math.random() * 0.4)),
-          kazanılan: Math.round(wonOpps.length / 6 * (0.5 + Math.random() * 1)),
+          month: MONTHS[d.getMonth()],
+          satış: monthWon.reduce((s: number, o: any) => s + Number(o.value || 0), 0),
+          pipeline: openOpps.filter((o: any) => inMonth(o, 'created_at')).reduce((s: number, o: any) => s + Number(o.value || 0), 0),
+          kazanılan: monthWon.length,
         });
       }
       setTrendData(trend);

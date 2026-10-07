@@ -77,9 +77,9 @@ export default function CollectionsAnalyticsPage() {
 
       // Calculate KPIs
       const totalInvoiced = collData.reduce((s, c) => s + (c.amount || 0), 0);
-      const paidColls = collData.filter(c => c.status === 'paid');
+      const paidColls = collData.filter(c => (c.status === 'paid' || c.status === 'Ödendi'));
       const totalCollected = paidColls.reduce((s, c) => s + (c.amount || 0), 0);
-      const openColls = collData.filter(c => c.status !== 'paid');
+      const openColls = collData.filter(c => !(c.status === 'paid' || c.status === 'Ödendi'));
       const openAmount = openColls.reduce((s, c) => s + (c.amount || 0), 0);
       
       const overdueColls = openColls.filter(c => new Date(c.due_date) < today);
@@ -140,14 +140,14 @@ export default function CollectionsAnalyticsPage() {
 
       Object.entries(byCustomer).forEach(([custName, colls]) => {
         const invoiced = colls.reduce((s, c) => s + (c.amount || 0), 0);
-        const collected = colls.filter(c => c.status === 'paid').reduce((s, c) => s + (c.amount || 0), 0);
-        const open = colls.filter(c => c.status !== 'paid').reduce((s, c) => s + (c.amount || 0), 0);
-        const overdue = colls.filter(c => c.status !== 'paid' && new Date(c.due_date) < today).reduce((s, c) => s + (c.amount || 0), 0);
-        const overdueCount = colls.filter(c => c.status !== 'paid' && new Date(c.due_date) < today).length;
+        const collected = colls.filter(c => (c.status === 'paid' || c.status === 'Ödendi')).reduce((s, c) => s + (c.amount || 0), 0);
+        const open = colls.filter(c => !(c.status === 'paid' || c.status === 'Ödendi')).reduce((s, c) => s + (c.amount || 0), 0);
+        const overdue = colls.filter(c => !(c.status === 'paid' || c.status === 'Ödendi') && new Date(c.due_date) < today).reduce((s, c) => s + (c.amount || 0), 0);
+        const overdueCount = colls.filter(c => !(c.status === 'paid' || c.status === 'Ödendi') && new Date(c.due_date) < today).length;
 
         const avgOverdueDays = overdueCount > 0
           ? colls
-              .filter(c => c.status !== 'paid' && new Date(c.due_date) < today)
+              .filter(c => !(c.status === 'paid' || c.status === 'Ödendi') && new Date(c.due_date) < today)
               .reduce((s, c) => s + Math.ceil((today.getTime() - new Date(c.due_date).getTime()) / (1000 * 60 * 60 * 24)), 0) / overdueCount
           : 0;
 
@@ -184,17 +184,19 @@ export default function CollectionsAnalyticsPage() {
         invoice_count: collData.length,
       });
 
-      // Trend data (last 6 months mock)
+      // Trend data - son 6 ay, gerçek veriden
       const MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
-      const currentMonth = new Date().getMonth();
+      const isPaidC = (c: any) => c.status === 'paid' || c.status === 'Ödendi';
       const trend = [];
       for (let i = 5; i >= 0; i--) {
-        const m = (currentMonth - i + 12) % 12;
+        const d = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
         trend.push({
-          month: MONTHS[m],
-          faturalanan: Math.round(totalInvoiced / 6 * (0.8 + Math.random() * 0.4)),
-          tahsil: Math.round(totalCollected / 6 * (0.7 + Math.random() * 0.5)),
-          vadesi_gecmis: Math.round(overdueAmount / 6 * (0.5 + Math.random() * 1)),
+          month: MONTHS[d.getMonth()],
+          faturalanan: collData.filter((c: any) => String(c.due_date || c.created_at || '').startsWith(key)).reduce((s: number, c: any) => s + Number(c.amount || 0), 0),
+          tahsil: collData.filter((c: any) => isPaidC(c) && String(c.payment_date || '').startsWith(key)).reduce((s: number, c: any) => s + Number(c.amount || 0), 0),
+          vadesi_gecmis: collData.filter((c: any) => !isPaidC(c) && c.due_date && new Date(c.due_date) <= monthEnd && new Date(c.due_date) < today && String(c.due_date).startsWith(key)).reduce((s: number, c: any) => s + Number(c.amount || 0), 0),
         });
       }
       setTrendData(trend);
@@ -230,7 +232,7 @@ export default function CollectionsAnalyticsPage() {
         amount: inv.amount,
         issue_date: inv.created_at,
         due_date: inv.due_date,
-        status: inv.status === 'paid' ? 'Ödendi' : new Date(inv.due_date) < new Date() ? 'Vadesi Geçti' : 'Açık',
+        status: (inv.status === 'paid' || inv.status === 'Ödendi') ? 'Ödendi' : new Date(inv.due_date) < new Date() ? 'Vadesi Geçti' : 'Açık',
         paid_date: inv.paid_date,
         rep: inv.sales_rep?.name || '-',
         notes: inv.notes || '-',

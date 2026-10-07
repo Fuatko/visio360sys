@@ -505,69 +505,84 @@ export default function SWOTAnalysisPage() {
     if (!repId) return;
 
     try {
-      // Fetch all data in parallel
+      // Tüm veriyi çek (şirket ayrımı veritabanında yapılıyor), kişi bazında filtrele
       const [targetsRes, opportunitiesRes, collectionsRes, customersRes, activitiesRes] = await Promise.all([
-        supabase.from('sales_targets').select('*').eq('person_id', repId).eq('year', selectedYear).eq('month', selectedMonth),
-        supabase.from('opportunities').select('*').eq('owner_id', repId),
-        supabase.from('collections').select('*').eq('sales_rep_id', repId),
-        supabase.from('customers').select('*').eq('assigned_to', repId),
-        supabase.from('crm_activities').select('*').eq('assigned_to', repId)
+        supabase.from('targets').select('*'),
+        supabase.from('opportunities').select('*'),
+        supabase.from('collections').select('*'),
+        supabase.from('customers').select('*'),
+        supabase.from('crm_activities').select('*'),
       ]);
 
-      const targets = targetsRes.data?.[0];
-      const opportunities = opportunitiesRes.data || [];
-      const collections = collectionsRes.data || [];
-      const customers = customersRes.data || [];
-      const activities = activitiesRes.data || [];
+      const allTargets = targetsRes.data || [];
+      const allOpps = opportunitiesRes.data || [];
+      const allColls = collectionsRes.data || [];
+      const allCustomers = customersRes.data || [];
+      const allActivities = activitiesRes.data || [];
 
-      // Calculate metrics
-      const wonOpps = opportunities.filter(o => o.stage === 'won');
-      const monthCollections = collections.filter(c => {
-        const d = new Date(c.due_date || c.created_at);
-        return d.getMonth() + 1 === selectedMonth && d.getFullYear() === selectedYear;
-      });
-      const visits = activities.filter(a => a.type === 'visit' || a.type === 'meeting');
+      const ownerOf = (r: any) => r.sales_person_id || r.assigned_to || r.sales_rep_id || r.owner_id || null;
+      const isPaid = (c: any) => c.status === 'paid' || c.status === 'Ödendi';
+      const isWon = (o: any) => ['won', 'Kazanıldı', 'Kapanış'].includes(o.stage);
+      const isLost = (o: any) => ['lost', 'Kaybedildi'].includes(o.stage);
 
-      const totalInvoiced = monthCollections.reduce((sum, c) => sum + (c.amount || 0), 0) || 100000;
-      const totalCollected = monthCollections.filter(c => c.status === 'paid').reduce((sum, c) => sum + (c.amount || 0), 0);
+      const computeMetrics = (personId: string, year: number, month: number): PerformanceMetrics => {
+        const key = `${year}-${String(month).padStart(2, '0')}`;
+        const inMonth = (v: any) => String(v || '').startsWith(key);
 
-      const repMetrics: PerformanceMetrics = {
-        sales_target: targets?.target_amount || 100000,
-        actual_sales: targets?.actual_amount || wonOpps.reduce((sum, o) => sum + (o.value || 0), 0) || 85000,
-        sales_ratio: 0,
-        invoiced_amount: totalInvoiced,
-        collected_amount: totalCollected || totalInvoiced * 0.85,
-        collection_ratio: 0,
-        opportunity_count: opportunities.length || 15,
-        won_opportunities: wonOpps.length || 5,
-        conversion_rate: 0,
-        customer_count: customers.length || 12,
-        new_customers: customers.filter(c => {
-          const created = new Date(c.created_at);
-          return created.getMonth() + 1 === selectedMonth && created.getFullYear() === selectedYear;
-        }).length || 2,
-        lost_customers: Math.floor(Math.random() * 2),
-        avg_deal_size: wonOpps.length > 0 ? wonOpps.reduce((sum, o) => sum + (o.value || 0), 0) / wonOpps.length : 25000,
-        activity_count: activities.length || 35,
-        visit_count: visits.length || 18,
+        const opportunities = allOpps.filter((o: any) => ownerOf(o) === personId);
+        const monthOpps = opportunities.filter((o: any) => inMonth(o.created_at));
+        const wonOpps = opportunities.filter((o: any) => isWon(o) && inMonth(o.closed_at || o.updated_at || o.created_at));
+        const decided = opportunities.filter((o: any) => (isWon(o) || isLost(o)) && inMonth(o.closed_at || o.updated_at || o.created_at));
+        const monthCollections = allColls.filter((c: any) => ownerOf(c) === personId && inMonth(c.due_date || c.created_at));
+        const customers = allCustomers.filter((c: any) => ownerOf(c) === personId);
+        const activities = allActivities.filter((a: any) => ownerOf(a) === personId && inMonth(a.activity_date || a.created_at));
+        const visits = activities.filter((a: any) => ['visit', 'meeting', 'Ziyaret', 'Toplantı'].includes(a.type));
+        const target = allTargets.filter((t: any) => ownerOf(t) === personId && inMonth(t.period));
+
+        const wonValue = wonOpps.reduce((s: number, o: any) => s + Number(o.value || 0), 0);
+        const salesTarget = target.reduce((s: number, t: any) => s + Number(t.sales_target || 0), 0);
+        const achieved = target.reduce((s: number, t: any) => s + Number(t.achieved_sales || 0), 0);
+        const invoiced = monthCollections.reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+        const collected = monthCollections.filter(isPaid).reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+
+        const m: PerformanceMetrics = {
+          sales_target: salesTarget,
+          actual_sales: achieved || wonValue,
+          sales_ratio: 0,
+          invoiced_amount: invoiced,
+          collected_amount: collected,
+          collection_ratio: 0,
+          opportunity_count: monthOpps.length,
+          won_opportunities: wonOpps.length,
+          conversion_rate: 0,
+          customer_count: customers.length,
+          new_customers: customers.filter((c: any) => inMonth(c.created_at)).length,
+          lost_customers: 0,
+          avg_deal_size: wonOpps.length > 0 ? wonValue / wonOpps.length : 0,
+          activity_count: activities.length,
+          visit_count: visits.length,
+        };
+        m.sales_ratio = m.sales_target > 0 ? m.actual_sales / m.sales_target : 0;
+        m.collection_ratio = m.invoiced_amount > 0 ? m.collected_amount / m.invoiced_amount : 0;
+        m.conversion_rate = decided.length > 0 ? m.won_opportunities / decided.length : 0;
+        return m;
       };
 
-      // Calculate ratios
-      repMetrics.sales_ratio = repMetrics.sales_target > 0 ? repMetrics.actual_sales / repMetrics.sales_target : 0;
-      repMetrics.collection_ratio = repMetrics.invoiced_amount > 0 ? repMetrics.collected_amount / repMetrics.invoiced_amount : 0;
-      repMetrics.conversion_rate = repMetrics.opportunity_count > 0 ? repMetrics.won_opportunities / repMetrics.opportunity_count : 0;
-
+      const repMetrics = computeMetrics(repId, selectedYear, selectedMonth);
       setMetrics(repMetrics);
 
-      // Team average
+      // Ekip ortalaması - aynı dönem, tüm temsilcilerin gerçek ortalaması
+      const teamMetrics = salesTeam.map(r => computeMetrics(r.id, selectedYear, selectedMonth));
+      const avg = (f: (m: PerformanceMetrics) => number) =>
+        teamMetrics.length > 0 ? teamMetrics.reduce((s, m) => s + f(m), 0) / teamMetrics.length : 0;
       const teamAvg: PerformanceMetrics = {
         ...repMetrics,
-        sales_ratio: 0.92,
-        collection_ratio: 0.88,
-        conversion_rate: 0.28,
-        avg_deal_size: repMetrics.avg_deal_size * 1.05,
-        activity_count: 40,
-        visit_count: 20,
+        sales_ratio: avg(m => m.sales_ratio),
+        collection_ratio: avg(m => m.collection_ratio),
+        conversion_rate: avg(m => m.conversion_rate),
+        avg_deal_size: avg(m => m.avg_deal_size),
+        activity_count: avg(m => m.activity_count),
+        visit_count: avg(m => m.visit_count),
       };
       setTeamAvgMetrics(teamAvg);
 
@@ -590,28 +605,21 @@ export default function SWOTAnalysisPage() {
 
       setSWOTAnalysis(analysis);
 
-      // Historical data
+      // Geçmiş 6 ay - her ay gerçek veriden hesaplanır
       const historical = [];
       for (let i = 5; i >= 0; i--) {
         let m = selectedMonth - i;
         let y = selectedYear;
         if (m <= 0) { m += 12; y--; }
+        const hm = i === 0 ? repMetrics : computeMetrics(repId, y, m);
         historical.push({
           month: MONTHS.find(mon => mon.value === m)?.label.slice(0, 3) || '',
-          sales: Math.round((0.7 + Math.random() * 0.5) * 100),
-          collection: Math.round((0.7 + Math.random() * 0.3) * 100),
-          conversion: Math.round((0.15 + Math.random() * 0.25) * 100),
-          score: Math.round(50 + Math.random() * 40),
+          sales: Math.round(hm.sales_ratio * 100),
+          collection: Math.round(hm.collection_ratio * 100),
+          conversion: Math.round(hm.conversion_rate * 100),
+          score: i === 0 ? overallScore : calculateOverallScore(hm),
         });
       }
-      // Son ay gerçek veriler
-      historical[5] = {
-        month: MONTHS.find(mon => mon.value === selectedMonth)?.label.slice(0, 3) || '',
-        sales: Math.round(repMetrics.sales_ratio * 100),
-        collection: Math.round(repMetrics.collection_ratio * 100),
-        conversion: Math.round(repMetrics.conversion_rate * 100),
-        score: overallScore,
-      };
       setHistoricalData(historical);
 
     } catch (err) {
