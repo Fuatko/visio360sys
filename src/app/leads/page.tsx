@@ -71,6 +71,7 @@ export default function LeadsPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
   
   const [formData, setFormData] = useState({
@@ -146,26 +147,38 @@ export default function LeadsPage() {
         assigned_to: '',
       });
     }
+    setSaveError(null);
     setModalOpen(true);
   };
 
   const handleSave = async () => {
+    setSaveError(null);
     if (!formData.company_name) {
-      alert('Firma adı zorunludur');
+      setSaveError('Firma adı zorunludur');
       return;
     }
 
     setSaving(true);
     try {
-      if (editingLead) {
-        { const { error: dbErr } = await supabase.from('leads').update(cleanPayload(formData)).eq('id', editingLead.id); if (dbErr) throw dbErr; }
-      } else {
-        { const { error: dbErr } = await supabase.from('leads').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
+      const payload = cleanPayload({
+        ...formData,
+        score: Number.isFinite(formData.score) ? formData.score : 50,
+        estimated_value: Number.isFinite(formData.estimated_value) ? formData.estimated_value : 0,
+      });
+      console.log('Lead kaydediliyor:', payload);
+      const { error } = editingLead
+        ? await supabase.from('leads').update(payload).eq('id', editingLead.id)
+        : await supabase.from('leads').insert([payload]);
+      if (error) {
+        console.error('Lead kayıt hatası:', error);
+        setSaveError(`${error.message}${error.details ? ' — ' + error.details : ''}${error.hint ? ' (' + error.hint + ')' : ''}`);
+        return;
       }
       setModalOpen(false);
       fetchData();
     } catch (err: any) {
-      alert('Hata: ' + err.message);
+      console.error('Lead kayıt istisnası:', err);
+      setSaveError(err?.message || String(err));
     } finally {
       setSaving(false);
     }
@@ -457,6 +470,11 @@ export default function LeadsPage() {
         }
       >
         <div className="space-y-4">
+          {saveError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              <strong>Kaydedilemedi:</strong> {saveError}
+            </div>
+          )}
           <Input
             label="Firma Adı *"
             value={formData.company_name}
