@@ -151,20 +151,26 @@ export default function QuotesPage() {
   };
 
   const calculateTotals = () => {
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const generalDiscount = Math.min(Math.max(Number(formData.discount) || 0, 0), 100) / 100;
     let subtotal = 0;
     let taxTotal = 0;
-    
+
     items.forEach(item => {
-      const lineTotal = item.quantity * item.unit_price * (1 - item.discount / 100);
-      const lineTax = lineTotal * (item.tax_rate / 100);
+      // Satır tutarı (satır iskontosu düşülmüş)
+      const lineTotal = item.quantity * item.unit_price * (1 - (item.discount || 0) / 100);
       subtotal += lineTotal;
-      taxTotal += lineTax;
+      // KDV, genel iskonto da düşüldükten sonraki matrah üzerinden hesaplanır
+      taxTotal += lineTotal * (1 - generalDiscount) * ((item.tax_rate || 0) / 100);
     });
-    
-    const discountAmount = subtotal * (formData.discount / 100);
-    const total = subtotal - discountAmount + taxTotal;
-    
-    return { subtotal, taxTotal, discountAmount, total };
+
+    const discountAmount = round2(subtotal * generalDiscount);
+    subtotal = round2(subtotal);
+    taxTotal = round2(taxTotal);
+    const netTotal = round2(subtotal - discountAmount);
+    const total = round2(netTotal + taxTotal);
+
+    return { subtotal, taxTotal, discountAmount, netTotal, total };
   };
 
   const handleSave = async () => {
@@ -175,7 +181,7 @@ export default function QuotesPage() {
 
     setSaving(true);
     try {
-      const { subtotal, taxTotal, total } = calculateTotals();
+      const { subtotal, taxTotal, discountAmount, total } = calculateTotals();
       
       const quoteData = {
         quote_number: generateQuoteNumber(),
@@ -186,6 +192,7 @@ export default function QuotesPage() {
         discount: formData.discount,
         subtotal,
         tax_total: taxTotal,
+        discount_amount: discountAmount,
         total,
         status: 'draft',
       };
@@ -268,7 +275,7 @@ export default function QuotesPage() {
   const pendingValue = quotes.filter(q => q.status === 'sent').reduce((sum, q) => sum + q.total, 0);
   const approvedValue = approvedQuotes.reduce((sum, q) => sum + q.total, 0);
 
-  const { subtotal, taxTotal, total } = calculateTotals();
+  const { subtotal, taxTotal, discountAmount, netTotal, total } = calculateTotals();
 
   if (loading) {
     return (
@@ -563,6 +570,18 @@ export default function QuotesPage() {
                 max="100"
               />
             </div>
+            {discountAmount > 0 && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">İskonto Tutarı:</span>
+                  <span className="font-medium text-red-600">-₺{formatMoney(discountAmount)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-600">KDV Matrahı:</span>
+                  <span className="font-medium">₺{formatMoney(netTotal)}</span>
+                </div>
+              </>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-slate-600">KDV:</span>
               <span className="font-medium">₺{formatMoney(taxTotal)}</span>
