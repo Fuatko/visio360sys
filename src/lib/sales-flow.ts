@@ -61,7 +61,11 @@ export async function createOrderFromQuote(supabase: Supa, quoteId: string) {
       tax_rate: it.tax_rate ?? DEFAULT_TAX_RATE,
       total: it.total,
     })));
-    if (error) throw error;
+    if (error) {
+      // Kalemler eklenemezse yarım sipariş bırakma
+      await supabase.from('orders').delete().eq('id', order.id);
+      throw error;
+    }
   }
 
   return { order, created: true };
@@ -122,7 +126,11 @@ export async function createOrderFromOpportunity(supabase: Supa, opp: any) {
     tax_rate: DEFAULT_TAX_RATE,
     total: value,
   }]);
-  if (error) throw error;
+  if (error) {
+    // Kalem eklenemezse yarım sipariş bırakma
+    await supabase.from('orders').delete().eq('id', order.id);
+    throw error;
+  }
 
   return { order, created: true, fromQuote: false };
 }
