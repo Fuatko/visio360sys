@@ -46,11 +46,13 @@ export default function TargetsPage() {
     setLoading(true);
     try {
       const [targetRes, teamRes] = await Promise.all([
-        supabase.from('targets').select('*').order('period', { ascending: false }),
-        supabase.from('sales_team').select('id, name, region').eq('status', 'active'),
+        supabase.from('sales_targets').select('id, sales_person_id, period, sales_target, collection_target, achieved_sales, achieved_collection').order('period', { ascending: false }),
+        supabase.from('sales_team').select('id, name, region').order('name'),
       ]);
-      setTargets(targetRes.data || []);
-      setSalesTeam(teamRes.data || []);
+      if (targetRes.error) alert('Hedefler yüklenemedi: ' + targetRes.error.message);
+      const team = teamRes.data || [];
+      setTargets((targetRes.data || []).map((t: any) => ({ ...t, sales_team: team.find((m: any) => m.id === t.sales_person_id) || null })));
+      setSalesTeam(team);
     } catch (err: any) {
       console.error('Hata:', err);
     } finally {
@@ -86,9 +88,9 @@ export default function TargetsPage() {
     setSaving(true);
     try {
       if (editingTarget) {
-        { const { error: dbErr } = await supabase.from('targets').update(cleanPayload(formData)).eq('id', editingTarget.id); if (dbErr) throw dbErr; }
+        { const { error: dbErr } = await supabase.from('sales_targets').update(cleanPayload(formData)).eq('id', editingTarget.id); if (dbErr) throw dbErr; }
       } else {
-        { const { error: dbErr } = await supabase.from('targets').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
+        { const { error: dbErr } = await supabase.from('sales_targets').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
       }
       setModalOpen(false);
       fetchData();
@@ -101,7 +103,7 @@ export default function TargetsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Silmek istediğinize emin misiniz?')) return;
-    await supabase.from('targets').delete().eq('id', id);
+    await supabase.from('sales_targets').delete().eq('id', id);
     fetchData();
   };
 
