@@ -522,7 +522,7 @@ export default function SWOTAnalysisPage() {
 
       const ownerOf = (r: any) => r.sales_person_id || r.assigned_to || r.sales_rep_id || r.owner_id || null;
       const isPaid = (c: any) => c.status === 'paid' || c.status === 'Ödendi';
-      const isWon = (o: any) => ['won', 'Kazanıldı', 'Kapanış'].includes(o.stage);
+      const isWon = (o: any) => ['won', 'Kazanıldı'].includes(o.stage);
       const isLost = (o: any) => ['lost', 'Kaybedildi'].includes(o.stage);
 
       const computeMetrics = (personId: string, year: number, month: number): PerformanceMetrics => {

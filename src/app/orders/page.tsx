@@ -100,7 +100,8 @@ export default function OrdersPage() {
         supabase.from('products').select('id, name, price, tax_rate').eq('status', 'active'),
       ]);
       
-      setOrders(ordersRes.data || []);
+      const custList = customersRes.data || [];
+      setOrders((ordersRes.data || []).map((o: any) => ({ ...o, customer: custList.find((c: any) => c.id === o.customer_id) || null })));
       setCustomers(customersRes.data || []);
       setProducts(productsRes.data || []);
     } catch (err: any) {
@@ -268,7 +269,7 @@ export default function OrdersPage() {
   const viewOrder = async (order: Order) => {
     const { data: items } = await supabase
       .from('order_items')
-      .select('*, product:products(name)')
+      .select('*, product:product_id(name)')
       .eq('order_id', order.id);
     
     setSelectedOrder({ ...order, items: items || [] });
@@ -684,7 +685,7 @@ export default function OrdersPage() {
               <tbody>
                 {selectedOrder.items?.map((item, i) => (
                   <tr key={i} className="border-b">
-                    <td className="px-3 py-2">{item.product?.name || '-'}</td>
+                    <td className="px-3 py-2">{item.product?.name || (item as any).description || '-'}</td>
                     <td className="px-3 py-2 text-right">{item.quantity}</td>
                     <td className="px-3 py-2 text-right">₺{formatMoney(item.unit_price)}</td>
                     <td className="px-3 py-2 text-right font-medium">₺{formatMoney(item.total)}</td>

@@ -3,14 +3,18 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
-import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import { createOrderFromQuote } from '@/lib/sales-flow';
 
 interface Quote {
   id: string;
   quote_number: string;
   customer_id: string;
+  opportunity_id?: string | null;
+  sales_person_id?: string | null;
   customer?: { name: string };
   subject: string;
   status: string;
@@ -58,6 +62,8 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'info' 
 };
 
 export default function QuotesPage() {
+  const router = useRouter();
+  const [opportunityLink, setOpportunityLink] = useState<{ id: string; title: string; assigned_to: string | null; stage: string } | null>(null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -96,8 +102,9 @@ export default function QuotesPage() {
         supabase.from('products').select('id, name, price, tax_rate, unit').eq('status', 'active'),
       ]);
       
-      setQuotes(quotesRes.data || []);
-      setCustomers(customersRes.data || []);
+      const custs = customersRes.data || [];
+      setQuotes((quotesRes.data || []).map((q: any) => ({ ...q, customer: custs.find((c: any) => c.id === q.customer_id) || null })));
+      setCustomers(custs);
       setProducts(productsRes.data || []);
     } catch (err: any) {
       console.error('Veri çekme hatası:', err);
@@ -107,6 +114,27 @@ export default function QuotesPage() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  // Fırsatlar sayfasından "Teklif" ile gelindiyse formu fırsat bilgileriyle aç
+  useEffect(() => {
+    const oppId = new URLSearchParams(window.location.search).get('opportunity');
+    if (!oppId) return;
+    (async () => {
+      const { data: opp } = await supabase.from('opportunities').select('*').eq('id', oppId).single();
+      if (!opp) return;
+      setOpportunityLink({ id: opp.id, title: opp.title, assigned_to: opp.assigned_to, stage: opp.stage });
+      setFormData({
+        customer_id: opp.customer_id || '',
+        subject: opp.title || '',
+        valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        notes: opp.notes || '',
+        discount: 0,
+      });
+      setItems([{ product_id: '', quantity: 1, unit_price: Number(opp.value) || 0, discount: 0, tax_rate: 20 }]);
+      setModalOpen(true);
+      window.history.replaceState(null, '', '/quotes');
+    })();
+  }, []);
 
   const generateQuoteNumber = () => {
     const year = new Date().getFullYear();
@@ -123,6 +151,7 @@ export default function QuotesPage() {
       discount: 0,
     });
     setItems([{ product_id: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 20 }]);
+    setOpportunityLink(null);
     setModalOpen(true);
   };
 
@@ -195,6 +224,8 @@ export default function QuotesPage() {
         discount_amount: discountAmount,
         total,
         status: 'draft',
+        opportunity_id: opportunityLink?.id || null,
+        sales_person_id: opportunityLink?.assigned_to || null,
       };
 
       const { data: quote, error } = await supabase
@@ -218,6 +249,12 @@ export default function QuotesPage() {
 
       { const { error: dbErr } = await supabase.from('quote_items').insert(cleanPayload(quoteItems)); if (dbErr) throw dbErr; }
 
+      // Fırsat erken aşamadaysa "Teklif" aşamasına taşı
+      if (opportunityLink && ['Keşif', ''].includes(opportunityLink.stage || '')) {
+        await supabase.from('opportunities').update({ stage: 'Teklif' }).eq('id', opportunityLink.id);
+      }
+
+      setOpportunityLink(null);
       setModalOpen(false);
       fetchData();
     } catch (err: any) {
@@ -227,9 +264,34 @@ export default function QuotesPage() {
     }
   };
 
+  const convertToOrder = async (quoteId: string) => {
+    try {
+      const res = await createOrderFromQuote(supabase, quoteId);
+      const msg = res.created
+        ? `${res.order.order_number} numaralı sipariş oluşturuldu.`
+        : `Bu teklif için zaten ${res.order.order_number} numaralı sipariş var.`;
+      if (confirm(msg + '\n\nSiparişler sayfasına gitmek ister misiniz?')) router.push('/orders');
+    } catch (err: any) {
+      alert('Sipariş oluşturulamadı: ' + err.message);
+    }
+  };
+
   const updateStatus = async (id: string, status: string) => {
     try {
       { const { error: dbErr } = await supabase.from('quotes').update(cleanPayload({ status })).eq('id', id); if (dbErr) throw dbErr; }
+      if (status === 'approved') {
+        const quote = quotes.find(q => q.id === id);
+        if (quote?.opportunity_id) {
+          await supabase.from('opportunities')
+            .update({ stage: 'Kazanıldı', probability: 100, closed_at: new Date().toISOString() })
+            .eq('id', quote.opportunity_id);
+        }
+        await fetchData();
+        if (confirm('Teklif onaylandı' + (quote?.opportunity_id ? ' ve bağlı fırsat "Kazanıldı" yapıldı' : '') + '.\n\nBu tekliften sipariş oluşturulsun mu?')) {
+          await convertToOrder(id);
+        }
+        return;
+      }
       fetchData();
     } catch (err: any) {
       alert('Hata: ' + err.message);
@@ -250,7 +312,7 @@ export default function QuotesPage() {
   const viewQuote = async (quote: Quote) => {
     const { data: items } = await supabase
       .from('quote_items')
-      .select('*, product:products(name)')
+      .select('*, product:product_id(name)')
       .eq('quote_id', quote.id);
     
     setSelectedQuote({ ...quote, items: items || [] });
@@ -401,7 +463,10 @@ export default function QuotesPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 font-medium">{customers.find(c => c.id === quote.customer_id)?.name || '-'}</td>
-                        <td className="px-4 py-3 text-slate-600">{quote.subject || '-'}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {quote.subject || '-'}
+                          {quote.opportunity_id && <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded" title="Bir fırsata bağlı"><Target className="h-3 w-3" />Fırsat</span>}
+                        </td>
                         <td className="px-4 py-3 text-right font-semibold">₺{formatMoney(quote.total)}</td>
                         <td className="px-4 py-3 text-center">
                           <Badge variant={statusConfig[quote.status]?.variant || 'default'}>
@@ -430,6 +495,11 @@ export default function QuotesPage() {
                                   <XCircle className="h-4 w-4 text-red-500" />
                                 </Button>
                               </>
+                            )}
+                            {quote.status === 'approved' && (
+                              <Button variant="ghost" size="sm" onClick={() => convertToOrder(quote.id)} title="Siparişe dönüştür">
+                                <ShoppingCart className="h-4 w-4 text-green-600" />
+                              </Button>
                             )}
                             <Button variant="ghost" size="sm" onClick={() => handleDelete(quote.id)}>
                               <Trash2 className="h-4 w-4 text-red-500" />
@@ -469,6 +539,12 @@ export default function QuotesPage() {
         }
       >
         <div className="space-y-6">
+          {opportunityLink && (
+            <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+              <Target className="h-4 w-4" />
+              <span>Bu teklif <strong>{opportunityLink.title}</strong> fırsatına bağlanacak.</span>
+            </div>
+          )}
           {/* Müşteri ve Genel Bilgiler */}
           <div className="grid grid-cols-2 gap-4">
             <Select
@@ -653,7 +729,7 @@ export default function QuotesPage() {
                 <tbody>
                   {selectedQuote.items?.map((item, i) => (
                     <tr key={i} className="border-b">
-                      <td className="px-3 py-2">{item.product?.name || '-'}</td>
+                      <td className="px-3 py-2">{item.product?.name || (item as any).description || '-'}</td>
                       <td className="px-3 py-2 text-right">{item.quantity}</td>
                       <td className="px-3 py-2 text-right">₺{formatMoney(item.unit_price)}</td>
                       <td className="px-3 py-2 text-right">%{item.discount}</td>

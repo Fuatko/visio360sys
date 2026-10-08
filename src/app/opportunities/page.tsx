@@ -4,9 +4,13 @@ import Header from '@/components/Header';
 import SalesFilter from '@/components/SalesFilter';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui';
 import { formatMoney, cleanPayload } from '@/lib/utils';
-import { TrendingUp, Plus, Edit2, Trash2, RefreshCw, Building2, Calendar, User } from 'lucide-react';
+import { TrendingUp, Plus, Edit2, Trash2, RefreshCw, Building2, Calendar, User, FileText, ShoppingCart, Trophy } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import { createOrderFromOpportunity, WON_STAGES, LOST_STAGES } from '@/lib/sales-flow';
+
+const STAGES = ['Keşif', 'Teklif', 'Müzakere', 'Kapanış', 'Kazanıldı', 'Kaybedildi'];
 
 interface Opportunity {
   id: string;
@@ -18,6 +22,7 @@ interface Opportunity {
   stage: string;
   expected_close: string;
   notes: string;
+  closed_at?: string | null;
   customer?: { name: string } | null;
   sales_team?: { name: string; region: string } | null;
 }
@@ -34,6 +39,7 @@ interface SalesPerson {
 }
 
 export default function OpportunitiesPage() {
+  const router = useRouter();
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [salesTeam, setSalesTeam] = useState<SalesPerson[]>([]);
@@ -55,13 +61,20 @@ export default function OpportunitiesPage() {
     setLoading(true);
     try {
       const [oppRes, custRes, teamRes] = await Promise.all([
-        supabase.from('opportunities').select('*, customer:customer_id(name), sales_team:assigned_to(name, region)').order('created_at', { ascending: false }),
+        supabase.from('opportunities').select('*').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name').order('name'),
-        supabase.from('sales_team').select('id, name, region').eq('status', 'active'),
+        supabase.from('sales_team').select('id, name, region').order('name'),
       ]);
-      setOpportunities(oppRes.data || []);
-      setCustomers(custRes.data || []);
-      setSalesTeam(teamRes.data || []);
+      if (oppRes.error) alert('Fırsatlar yüklenemedi: ' + oppRes.error.message);
+      const custs = custRes.data || [];
+      const team = teamRes.data || [];
+      setOpportunities((oppRes.data || []).map((o: any) => ({
+        ...o,
+        customer: custs.find((c: any) => c.id === o.customer_id) || null,
+        sales_team: team.find((t: any) => t.id === o.assigned_to) || null,
+      })));
+      setCustomers(custs);
+      setSalesTeam(team);
     } catch (err: any) {
       console.error('Hata:', err);
     } finally {
@@ -91,18 +104,50 @@ export default function OpportunitiesPage() {
     setModalOpen(true);
   };
 
+  const offerOrder = async (opp: any) => {
+    if (!confirm(`"${opp.title}" kazanıldı 🎉\n\nBu fırsat için sipariş oluşturulsun mu?\n(Bağlı bir teklif varsa kalemleri tekliften aktarılır.)`)) return;
+    try {
+      const res = await createOrderFromOpportunity(supabase, opp);
+      const msg = res.created
+        ? `${res.order.order_number} numaralı sipariş oluşturuldu${res.fromQuote ? ' (tekliften aktarıldı)' : ''}.`
+        : `Bu fırsat için zaten ${res.order.order_number} numaralı sipariş var.`;
+      if (confirm(msg + '\n\nSiparişler sayfasına gitmek ister misiniz?')) router.push('/orders');
+    } catch (err: any) {
+      alert('Sipariş oluşturulamadı: ' + err.message);
+    }
+  };
+
   const handleSave = async () => {
     if (!formData.title) { alert('Başlık zorunludur'); return; }
     setSaving(true);
     try {
-      const dataToSave = { ...formData, customer_id: formData.customer_id || null, assigned_to: formData.assigned_to || null };
+      const isWon = WON_STAGES.includes(formData.stage);
+      const isLost = LOST_STAGES.includes(formData.stage);
+      const wasClosed = editingOpp && [...WON_STAGES, ...LOST_STAGES].includes(editingOpp.stage);
+      const dataToSave: any = {
+        ...formData,
+        customer_id: formData.customer_id || null,
+        assigned_to: formData.assigned_to || null,
+      };
+      if (isWon) dataToSave.probability = 100;
+      if (isLost) dataToSave.probability = 0;
+      if ((isWon || isLost) && !wasClosed) dataToSave.closed_at = new Date().toISOString();
+      if (!isWon && !isLost) dataToSave.closed_at = null;
+
+      let saved: any;
       if (editingOpp) {
-        { const { error: dbErr } = await supabase.from('opportunities').update(cleanPayload(dataToSave)).eq('id', editingOpp.id); if (dbErr) throw dbErr; }
+        const { data, error } = await supabase.from('opportunities').update(cleanPayload(dataToSave)).eq('id', editingOpp.id).select().single();
+        if (error) throw error;
+        saved = data;
       } else {
-        { const { error: dbErr } = await supabase.from('opportunities').insert(cleanPayload([dataToSave])); if (dbErr) throw dbErr; }
+        const { data, error } = await supabase.from('opportunities').insert(cleanPayload([dataToSave])).select().single();
+        if (error) throw error;
+        saved = data;
       }
       setModalOpen(false);
-      fetchData();
+      await fetchData();
+      const justWon = isWon && !(editingOpp && WON_STAGES.includes(editingOpp.stage));
+      if (justWon && saved) await offerOrder(saved);
     } catch (err: any) {
       alert('Hata: ' + err.message);
     } finally {
@@ -124,14 +169,18 @@ export default function OpportunitiesPage() {
     return matchStage && matchPerson && matchRegion;
   });
 
-  const totalValue = filtered.reduce((s, o) => s + (o.value || 0), 0);
-  const weightedValue = filtered.reduce((s, o) => s + ((o.value || 0) * (o.probability || 0) / 100), 0);
+  const openOpps = filtered.filter(o => ![...WON_STAGES, ...LOST_STAGES].includes(o.stage));
+  const wonOpps = filtered.filter(o => WON_STAGES.includes(o.stage));
+  const totalValue = openOpps.reduce((s, o) => s + Number(o.value || 0), 0);
+  const weightedValue = openOpps.reduce((s, o) => s + (Number(o.value || 0) * (o.probability || 0) / 100), 0);
+  const wonValue = wonOpps.reduce((s, o) => s + Number(o.value || 0), 0);
 
   const stageColors: Record<string, string> = {
     'Keşif': 'bg-blue-100 text-blue-700',
     'Teklif': 'bg-yellow-100 text-yellow-700',
     'Müzakere': 'bg-orange-100 text-orange-700',
-    'Kapanış': 'bg-green-100 text-green-700',
+    'Kapanış': 'bg-purple-100 text-purple-700',
+    'Kazanıldı': 'bg-green-100 text-green-700',
     'Kaybedildi': 'bg-red-100 text-red-700',
   };
 
@@ -155,10 +204,7 @@ export default function OpportunitiesPage() {
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <select value={filterStage} onChange={(e) => setFilterStage(e.target.value)} className="h-9 rounded-lg border border-slate-200 px-3 text-sm">
             <option value="">Tüm Aşamalar</option>
-            <option value="Keşif">Keşif</option>
-            <option value="Teklif">Teklif</option>
-            <option value="Müzakere">Müzakere</option>
-            <option value="Kapanış">Kapanış</option>
+            {STAGES.map(st => <option key={st} value={st}>{st}</option>)}
           </select>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={fetchData}><RefreshCw className="h-4 w-4" /></Button>
@@ -167,10 +213,10 @@ export default function OpportunitiesPage() {
         </div>
 
         <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <Card className="p-4"><p className="text-2xl font-bold">{filtered.length}</p><p className="text-xs text-slate-500">Toplam Fırsat</p></Card>
-          <Card className="p-4"><p className="text-2xl font-bold text-blue-600">₺{formatMoney(totalValue)}</p><p className="text-xs text-slate-500">Pipeline Değeri</p></Card>
-          <Card className="p-4"><p className="text-2xl font-bold text-green-600">₺{formatMoney(weightedValue)}</p><p className="text-xs text-slate-500">Ağırlıklı Değer</p></Card>
-          <Card className="p-4"><p className="text-2xl font-bold text-amber-600">{filtered.filter(o => o.stage === 'Kapanış').length}</p><p className="text-xs text-slate-500">Kapanış Aşaması</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold">{openOpps.length}</p><p className="text-xs text-slate-500">Açık Fırsat</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold text-blue-600">₺{formatMoney(totalValue)}</p><p className="text-xs text-slate-500">Açık Pipeline Değeri</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold text-indigo-600">₺{formatMoney(weightedValue)}</p><p className="text-xs text-slate-500">Ağırlıklı Değer</p></Card>
+          <Card className="p-4"><p className="text-2xl font-bold text-green-600">₺{formatMoney(wonValue)}</p><p className="text-xs text-slate-500">Kazanılan ({wonOpps.length})</p></Card>
         </div>
 
         {filtered.length > 0 ? (
@@ -183,7 +229,7 @@ export default function OpportunitiesPage() {
                       <h3 className="font-semibold">{o.title}</h3>
                       {o.customer && <p className="text-xs text-slate-500 flex items-center gap-1"><Building2 className="h-3 w-3" />{o.customer.name}</p>}
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${stageColors[o.stage] || 'bg-gray-100 text-gray-700'}`}>{o.stage}</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1 ${stageColors[o.stage] || 'bg-gray-100 text-gray-700'}`}>{WON_STAGES.includes(o.stage) && <Trophy className="h-3 w-3" />}{o.stage}</span>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
@@ -208,7 +254,17 @@ export default function OpportunitiesPage() {
                       {getAssignedName(o.assigned_to)}
                     </div>
                   </div>
-                  <div className="mt-3 flex justify-end gap-1 border-t pt-3">
+                  <div className="mt-3 flex items-center justify-end gap-1 border-t pt-3">
+                    {!WON_STAGES.includes(o.stage) && !LOST_STAGES.includes(o.stage) && (
+                      <Button variant="ghost" size="sm" onClick={() => router.push(`/quotes?opportunity=${o.id}`)} title="Bu fırsat için teklif hazırla">
+                        <FileText className="h-4 w-4 text-indigo-600" /><span className="text-xs">Teklif</span>
+                      </Button>
+                    )}
+                    {WON_STAGES.includes(o.stage) && (
+                      <Button variant="ghost" size="sm" onClick={() => offerOrder(o)} title="Sipariş oluştur / göster">
+                        <ShoppingCart className="h-4 w-4 text-green-600" /><span className="text-xs">Sipariş</span>
+                      </Button>
+                    )}
                     <Button variant="ghost" size="sm" onClick={() => openModal(o)}><Edit2 className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="sm" onClick={() => handleDelete(o.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                   </div>
@@ -237,7 +293,7 @@ export default function OpportunitiesPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Select label="Aşama" value={formData.stage} onChange={(e) => setFormData({ ...formData, stage: e.target.value })}
-              options={[{ value: 'Keşif', label: 'Keşif' }, { value: 'Teklif', label: 'Teklif' }, { value: 'Müzakere', label: 'Müzakere' }, { value: 'Kapanış', label: 'Kapanış' }]} />
+              options={STAGES.map(st => ({ value: st, label: st === 'Kazanıldı' ? 'Kazanıldı ✓' : st === 'Kaybedildi' ? 'Kaybedildi ✗' : st }))} />
             <Input label="Tahmini Kapanış" type="date" value={formData.expected_close} onChange={(e) => setFormData({ ...formData, expected_close: e.target.value })} />
           </div>
           <Textarea label="Notlar" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />

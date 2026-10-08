@@ -13,6 +13,7 @@ import {
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
+import { orderNetAmount } from '@/lib/sales-flow';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart as RechartsPie, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart
@@ -150,9 +151,10 @@ export default function Dashboard() {
       const year = String(new Date().getFullYear());
 
       const isPaid = (c: any) => c.status === 'Ödendi' || c.status === 'paid';
-      const isWon = (o: any) => ['Kazanıldı', 'Kapanış', 'won'].includes(o.stage);
+      const isWon = (o: any) => ['Kazanıldı', 'won'].includes(o.stage);
       const isLost = (o: any) => ['Kaybedildi', 'lost'].includes(o.stage);
-      const orderTotal = (o: any) => Number(o.total ?? o.total_amount ?? o.grand_total ?? 0);
+      // Satış = siparişin KDV hariç net tutarı (hedeflerle karşılaştırılabilir olsun)
+      const orderTotal = (o: any) => orderNetAmount(o);
       const orderDate = (o: any) => o.order_date || o.created_at;
 
       const yearTargets = tgts.filter((t: any) => String(t.period || '').startsWith(year));
