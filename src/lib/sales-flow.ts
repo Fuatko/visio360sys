@@ -1,3 +1,4 @@
+import { nextDocumentNumber } from '@/lib/doc-number';
 // Satış akışı: Fırsat → Teklif → Sipariş
 // Kazanılan fırsattan veya onaylanan tekliften sipariş oluşturur.
 
@@ -9,11 +10,6 @@ export const DEFAULT_TAX_RATE = 20;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-const newOrderNumber = () => {
-  const year = new Date().getFullYear();
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `SIP-${year}-${random}`;
-};
 
 async function findExistingOrder(supabase: Supa, field: 'opportunity_id' | 'quote_id', id: string) {
   const { data } = await supabase.from('orders').select('id, order_number').eq(field, id).limit(1);
@@ -33,7 +29,7 @@ export async function createOrderFromQuote(supabase: Supa, quoteId: string) {
   const { data: order, error: oErr } = await supabase
     .from('orders')
     .insert([{
-      order_number: newOrderNumber(),
+      order_number: await nextDocumentNumber(supabase, 'order'),
       customer_id: quote.customer_id,
       sales_person_id: quote.sales_person_id || null,
       subtotal: quote.subtotal || 0,
@@ -100,7 +96,7 @@ export async function createOrderFromOpportunity(supabase: Supa, opp: any) {
   const { data: order, error: oErr } = await supabase
     .from('orders')
     .insert([{
-      order_number: newOrderNumber(),
+      order_number: await nextDocumentNumber(supabase, 'order'),
       customer_id: opp.customer_id || null,
       sales_person_id: opp.assigned_to || null,
       subtotal: value,

@@ -3,9 +3,12 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
-import { ShoppingCart, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Truck, CheckCircle, XCircle, Package, Clock } from 'lucide-react';
+import { ShoppingCart, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Truck, CheckCircle, XCircle, Package, Clock, Receipt } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
+import { createInvoiceFromOrder } from '@/lib/invoicing';
+import { nextDocumentNumber } from '@/lib/doc-number';
 
 interface Order {
   id: string;
@@ -61,6 +64,21 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'info' 
 };
 
 export default function OrdersPage() {
+  const router = useRouter();
+  const [invoicedOrderIds, setInvoicedOrderIds] = useState<Set<string>>(new Set());
+
+  const invoiceOrder = async (orderId: string) => {
+    try {
+      const res = await createInvoiceFromOrder(supabase, orderId);
+      const msg = res.created
+        ? 'Siparişten taslak fatura oluşturuldu.'
+        : `Bu sipariş için zaten ${res.invoice.invoice_number || 'taslak'} fatura var.`;
+      if (confirm(msg + '\n\nFaturalar sayfasına gidip kontrol edip kesmek ister misiniz?')) router.push('/invoices');
+      else fetchData();
+    } catch (err: any) {
+      alert('Fatura oluşturulamadı: ' + err.message);
+    }
+  };
   const [orders, setOrders] = useState<Order[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -100,6 +118,8 @@ export default function OrdersPage() {
         supabase.from('products').select('id, name, price, tax_rate').eq('status', 'active'),
       ]);
       
+      const { data: invs } = await supabase.from('invoices').select('order_id').neq('status', 'cancelled');
+      setInvoicedOrderIds(new Set((invs || []).map((i: any) => i.order_id).filter(Boolean)));
       const custList = customersRes.data || [];
       setOrders((ordersRes.data || []).map((o: any) => ({ ...o, customer: custList.find((c: any) => c.id === o.customer_id) || null })));
       setCustomers(customersRes.data || []);
@@ -112,12 +132,6 @@ export default function OrdersPage() {
   };
 
   useEffect(() => { fetchData(); }, []);
-
-  const generateOrderNumber = () => {
-    const year = new Date().getFullYear();
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    return `SIP-${year}-${random}`;
-  };
 
   const openModal = () => {
     setFormData({
@@ -199,7 +213,7 @@ export default function OrdersPage() {
       const { subtotal, taxTotal, total } = calculateTotals();
       
       const orderData = {
-        order_number: generateOrderNumber(),
+        order_number: await nextDocumentNumber(supabase, 'order'),
         customer_id: formData.customer_id,
         shipping_address: formData.shipping_address,
         billing_address: formData.billing_address,
@@ -450,6 +464,13 @@ export default function OrdersPage() {
                               {order.status === 'shipped' && (
                                 <Button variant="ghost" size="sm" onClick={() => updateStatus(order.id, 'delivered')} title="Teslim Et">
                                   <CheckCircle className="h-4 w-4 text-green-500" />
+                                </Button>
+                              )}
+                              {order.status !== 'cancelled' && (
+                                <Button variant="ghost" size="sm" onClick={() => invoiceOrder(order.id)}
+                                  title={invoicedOrderIds.has(order.id) ? 'Faturalandı' : 'Faturala'}>
+                                  <Receipt className={`h-4 w-4 ${invoicedOrderIds.has(order.id) ? 'text-slate-400' : 'text-indigo-600'}`} />
+                                  {!invoicedOrderIds.has(order.id) && <span className="text-xs">Faturala</span>}
                                 </Button>
                               )}
                               {['pending', 'confirmed'].includes(order.status) && (

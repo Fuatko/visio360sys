@@ -38,6 +38,7 @@ import {
   Eye,
   Trophy,
   Calculator,
+  Receipt,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -60,6 +61,7 @@ const salesItems = [
   { href: '/opportunities', label: 'Fırsatlar', icon: Target },
   { href: '/quotes', label: 'Teklifler', icon: FileSignature },
   { href: '/orders', label: 'Siparişler', icon: ShoppingCart },
+  { href: '/invoices', label: 'Faturalar', icon: Receipt },
   { href: '/contracts', label: 'Sözleşmeler', icon: ScrollText },
   { href: '/collections', label: 'Tahsilat', icon: Wallet },
 ];

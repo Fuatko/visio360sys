@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createOrderFromQuote } from '@/lib/sales-flow';
+import { nextDocumentNumber } from '@/lib/doc-number';
 
 interface Quote {
   id: string;
@@ -136,12 +137,6 @@ export default function QuotesPage() {
     })();
   }, []);
 
-  const generateQuoteNumber = () => {
-    const year = new Date().getFullYear();
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    return `TKL-${year}-${random}`;
-  };
-
   const openModal = () => {
     setFormData({
       customer_id: '',
@@ -213,7 +208,7 @@ export default function QuotesPage() {
       const { subtotal, taxTotal, discountAmount, total } = calculateTotals();
       
       const quoteData = {
-        quote_number: generateQuoteNumber(),
+        quote_number: await nextDocumentNumber(supabase, 'quote'),
         customer_id: formData.customer_id,
         subject: formData.subject,
         valid_until: formData.valid_until,
