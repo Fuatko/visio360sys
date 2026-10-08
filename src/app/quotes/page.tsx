@@ -3,12 +3,26 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
-import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target, ClipboardCheck, GitBranch, History, ShieldCheck } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createOrderFromQuote } from '@/lib/sales-flow';
 import { nextDocumentNumber } from '@/lib/doc-number';
+import { useAuth } from '@/lib/auth-context';
+
+// ISO 9001 madde 8.2.3: teklif müşteriye taahhüt edilmeden önce gözden geçirilir
+const REVIEW_CHECKLIST = [
+  { key: 'requirements', label: 'Müşteri gereksinimleri (kapsam, miktar, teslim şekli) açıkça tanımlandı' },
+  { key: 'capability', label: 'Kapasite ve teslim süresi karşılanabilir' },
+  { key: 'pricing', label: 'Fiyat ve iskonto yetki sınırları içinde, maliyet kontrol edildi' },
+  { key: 'terms', label: 'Ödeme koşulları ve geçerlilik süresi belirlendi' },
+  { key: 'legal', label: 'Yasal / mevzuat ve sözleşme şartları kontrol edildi' },
+  { key: 'differences', label: 'Önceki talep veya tekliften farklılıklar çözüldü' },
+];
+const DISCOUNT_APPROVAL_LIMIT = 20; // % — üzerindeki iskonto yönetici onayı gerektirir
+const quoteNo = (q: { quote_number: string; revision?: number | null } | null | undefined) =>
+  q ? `${q.quote_number}${q.revision ? ` Rev.${q.revision}` : ''}` : '';
 
 interface Quote {
   id: string;
@@ -16,6 +30,17 @@ interface Quote {
   customer_id: string;
   opportunity_id?: string | null;
   sales_person_id?: string | null;
+  revision?: number | null;
+  root_quote_id?: string | null;
+  superseded_by?: string | null;
+  revision_reason?: string | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+  review_checklist?: Record<string, boolean> | null;
+  review_notes?: string | null;
+  sent_at?: string | null;
+  decided_at?: string | null;
+  history?: any[];
   customer?: { name: string };
   subject: string;
   status: string;
@@ -56,14 +81,22 @@ interface Product {
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' | 'danger' }> = {
   draft: { label: 'Taslak', variant: 'default' },
+  reviewed: { label: 'Gözden Geçirildi', variant: 'warning' },
   sent: { label: 'Gönderildi', variant: 'info' },
   approved: { label: 'Onaylandı', variant: 'success' },
   rejected: { label: 'Reddedildi', variant: 'danger' },
   expired: { label: 'Süresi Doldu', variant: 'warning' },
+  revised: { label: 'Revize Edildi', variant: 'default' },
 };
 
 export default function QuotesPage() {
   const router = useRouter();
+  const { profile } = useAuth();
+  const [reviewTarget, setReviewTarget] = useState<Quote | null>(null);
+  const [reviewChecks, setReviewChecks] = useState<Record<string, boolean>>({});
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [revisionSource, setRevisionSource] = useState<Quote | null>(null);
+  const [revisionReason, setRevisionReason] = useState('');
   const [opportunityLink, setOpportunityLink] = useState<{ id: string; title: string; assigned_to: string | null; stage: string } | null>(null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -147,6 +180,68 @@ export default function QuotesPage() {
     });
     setItems([{ product_id: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 20 }]);
     setOpportunityLink(null);
+    setRevisionSource(null);
+    setRevisionReason('');
+    setModalOpen(true);
+  };
+
+  // ---------- ISO 8.2.3: Gözden geçirme ----------
+  const openReview = (q: Quote) => {
+    setReviewTarget(q);
+    setReviewChecks({});
+    setReviewNotes('');
+  };
+
+  const isManagerRole = ['super_admin', 'admin', 'org_admin', 'manager'].includes((profile as any)?.role || '') || !!(profile as any)?.is_org_admin;
+
+  const submitReview = async () => {
+    if (!reviewTarget) return;
+    const allChecked = REVIEW_CHECKLIST.every(c => reviewChecks[c.key]);
+    if (!allChecked) { alert('Gözden geçirmeyi tamamlamak için tüm maddeler onaylanmalıdır.'); return; }
+    if (Number(reviewTarget.discount) > DISCOUNT_APPROVAL_LIMIT && !isManagerRole) {
+      alert(`%${DISCOUNT_APPROVAL_LIMIT} üzeri iskonto yönetici onayı gerektirir. Gözden geçirmeyi bir yönetici yapmalıdır.`);
+      return;
+    }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('quotes').update({
+        status: 'reviewed',
+        reviewed_by: (profile as any)?.id || null,
+        reviewed_by_name: (profile as any)?.name || (profile as any)?.email || null,
+        reviewed_at: new Date().toISOString(),
+        review_checklist: reviewChecks,
+        review_notes: reviewNotes || null,
+      }).eq('id', reviewTarget.id);
+      if (error) throw error;
+      setReviewTarget(null);
+      fetchData();
+    } catch (err: any) {
+      alert('Hata: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ---------- ISO 7.5.3: Revizyon ----------
+  const startRevision = async (q: Quote) => {
+    const { data: qItems } = await supabase.from('quote_items').select('*').eq('quote_id', q.id);
+    setFormData({
+      customer_id: q.customer_id || '',
+      subject: q.subject || '',
+      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      notes: q.notes || '',
+      discount: Number(q.discount) || 0,
+    });
+    setItems((qItems || []).map((it: any) => ({
+      product_id: it.product_id || '',
+      quantity: Number(it.quantity) || 1,
+      unit_price: Number(it.unit_price) || 0,
+      discount: Number(it.discount) || 0,
+      tax_rate: it.tax_rate != null ? Number(it.tax_rate) : 20,
+    })));
+    setOpportunityLink(null);
+    setRevisionSource(q);
+    setRevisionReason('');
     setModalOpen(true);
   };
 
@@ -203,12 +298,21 @@ export default function QuotesPage() {
       return;
     }
 
+    if (revisionSource && !revisionReason.trim()) {
+      alert('Revizyon nedeni zorunludur (ISO 9001 doküman kontrolü).');
+      return;
+    }
+
     setSaving(true);
     try {
       const { subtotal, taxTotal, discountAmount, total } = calculateTotals();
-      
+      const rev = revisionSource;
+
       const quoteData = {
-        quote_number: await nextDocumentNumber(supabase, 'quote'),
+        quote_number: rev ? rev.quote_number : await nextDocumentNumber(supabase, 'quote'),
+        revision: rev ? (Number(rev.revision) || 0) + 1 : 0,
+        root_quote_id: rev ? (rev.root_quote_id || rev.id) : null,
+        revision_reason: rev ? revisionReason.trim() : null,
         customer_id: formData.customer_id,
         subject: formData.subject,
         valid_until: formData.valid_until,
@@ -219,8 +323,8 @@ export default function QuotesPage() {
         discount_amount: discountAmount,
         total,
         status: 'draft',
-        opportunity_id: opportunityLink?.id || null,
-        sales_person_id: opportunityLink?.assigned_to || null,
+        opportunity_id: rev ? (rev.opportunity_id || null) : (opportunityLink?.id || null),
+        sales_person_id: rev ? (rev.sales_person_id || null) : (opportunityLink?.assigned_to || null),
       };
 
       const { data: quote, error } = await supabase
@@ -234,7 +338,7 @@ export default function QuotesPage() {
       // Teklif kalemlerini ekle
       const quoteItems = items.map(item => ({
         quote_id: quote.id,
-        product_id: item.product_id,
+        product_id: item.product_id || null,
         quantity: item.quantity,
         unit_price: item.unit_price,
         discount: item.discount,
@@ -249,7 +353,15 @@ export default function QuotesPage() {
         await supabase.from('opportunities').update({ stage: 'Teklif' }).eq('id', opportunityLink.id);
       }
 
+      // Önceki revizyonu "Revize Edildi" olarak kapat
+      if (rev) {
+        const { error: revErr } = await supabase.from('quotes')
+          .update({ status: 'revised', superseded_by: quote.id }).eq('id', rev.id);
+        if (revErr) throw revErr;
+      }
+
       setOpportunityLink(null);
+      setRevisionSource(null);
       setModalOpen(false);
       fetchData();
     } catch (err: any) {
@@ -273,7 +385,10 @@ export default function QuotesPage() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      { const { error: dbErr } = await supabase.from('quotes').update(cleanPayload({ status })).eq('id', id); if (dbErr) throw dbErr; }
+      const stamp: any = { status };
+      if (status === 'sent') stamp.sent_at = new Date().toISOString();
+      if (status === 'approved' || status === 'rejected') stamp.decided_at = new Date().toISOString();
+      { const { error: dbErr } = await supabase.from('quotes').update(cleanPayload(stamp)).eq('id', id); if (dbErr) throw dbErr; }
       if (status === 'approved') {
         const quote = quotes.find(q => q.id === id);
         if (quote?.opportunity_id) {
@@ -310,7 +425,12 @@ export default function QuotesPage() {
       .select('*, product:product_id(name)')
       .eq('quote_id', quote.id);
     
-    setSelectedQuote({ ...quote, items: items || [] });
+    const rootId = quote.root_quote_id || quote.id;
+    const { data: history } = await supabase.from('quotes')
+      .select('id, quote_number, revision, status, total, created_at, revision_reason, reviewed_by_name, reviewed_at')
+      .or(`id.eq.${rootId},root_quote_id.eq.${rootId}`)
+      .order('revision', { ascending: true });
+    setSelectedQuote({ ...quote, items: items || [], history: history || [] });
     setDetailModalOpen(true);
   };
 
@@ -320,7 +440,7 @@ export default function QuotesPage() {
 
   // Filtreleme
   const filteredQuotes = quotes.filter(q => {
-    const matchSearch = q.quote_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchSearch = quoteNo(q).toLowerCase().includes(searchTerm.toLowerCase()) ||
                        q.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchStatus = !filterStatus || q.status === filterStatus;
     return matchSearch && matchStatus;
@@ -454,8 +574,13 @@ export default function QuotesPage() {
                       <tr key={quote.id} className="border-b hover:bg-slate-50">
                         <td className="px-4 py-3">
                           <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
-                            {quote.quote_number}
+                            {quoteNo(quote)}
                           </span>
+                          {quote.reviewed_at && (
+                            <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-600" title={`Gözden geçiren: ${quote.reviewed_by_name || '-'}`}>
+                              <ShieldCheck className="h-3 w-3" />Gözden geçirildi
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 font-medium">{customers.find(c => c.id === quote.customer_id)?.name || '-'}</td>
                         <td className="px-4 py-3 text-slate-600">
@@ -477,8 +602,18 @@ export default function QuotesPage() {
                               <Eye className="h-4 w-4" />
                             </Button>
                             {quote.status === 'draft' && (
-                              <Button variant="ghost" size="sm" onClick={() => updateStatus(quote.id, 'sent')} title="Gönder">
-                                <Send className="h-4 w-4 text-blue-500" />
+                              <Button variant="ghost" size="sm" onClick={() => openReview(quote)} title="Gözden geçir (ISO 9001 · 8.2.3)">
+                                <ClipboardCheck className="h-4 w-4 text-amber-600" /><span className="text-xs">Gözden Geçir</span>
+                              </Button>
+                            )}
+                            {quote.status === 'reviewed' && (
+                              <Button variant="ghost" size="sm" onClick={() => updateStatus(quote.id, 'sent')} title="Müşteriye gönderildi olarak işaretle">
+                                <Send className="h-4 w-4 text-blue-500" /><span className="text-xs">Gönder</span>
+                              </Button>
+                            )}
+                            {['sent', 'rejected', 'expired'].includes(quote.status) && (
+                              <Button variant="ghost" size="sm" onClick={() => startRevision(quote)} title="Yeni revizyon oluştur">
+                                <GitBranch className="h-4 w-4 text-indigo-600" />
                               </Button>
                             )}
                             {quote.status === 'sent' && (
@@ -496,9 +631,11 @@ export default function QuotesPage() {
                                 <ShoppingCart className="h-4 w-4 text-green-600" />
                               </Button>
                             )}
-                            <Button variant="ghost" size="sm" onClick={() => handleDelete(quote.id)}>
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
+                            {['draft', 'reviewed'].includes(quote.status) && (
+                              <Button variant="ghost" size="sm" onClick={() => handleDelete(quote.id)} title="Sil">
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -522,18 +659,30 @@ export default function QuotesPage() {
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Yeni Teklif Oluştur"
+        title={revisionSource ? `Revizyon: ${quoteNo(revisionSource)} → Rev.${(Number(revisionSource.revision) || 0) + 1}` : 'Yeni Teklif Oluştur'}
+        size="lg"
         
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)}>İptal</Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? 'Kaydediliyor...' : 'Teklif Oluştur'}
+              {saving ? 'Kaydediliyor...' : revisionSource ? 'Revizyonu Oluştur' : 'Teklif Oluştur'}
             </Button>
           </>
         }
       >
         <div className="space-y-6">
+          {revisionSource && (
+            <div className="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
+              <div className="flex items-center gap-2">
+                <GitBranch className="h-4 w-4" />
+                <span><strong>{quoteNo(revisionSource)}</strong> teklifinin yeni revizyonu. Önceki sürüm değiştirilmeden "Revize Edildi" olarak saklanır.</span>
+              </div>
+              <input value={revisionReason} onChange={(e) => setRevisionReason(e.target.value)}
+                placeholder="Revizyon nedeni * (örn. müşteri kapsam değişikliği istedi)"
+                className="w-full rounded border border-indigo-200 bg-white px-3 py-2 text-sm text-slate-800" />
+            </div>
+          )}
           {opportunityLink && (
             <div className="flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
               <Target className="h-4 w-4" />
@@ -677,7 +826,8 @@ export default function QuotesPage() {
       <Modal
         isOpen={detailModalOpen}
         onClose={() => setDetailModalOpen(false)}
-        title={`Teklif: ${selectedQuote?.quote_number}`}
+        title={`Teklif: ${quoteNo(selectedQuote)}`}
+        size="lg"
         
         footer={
           <>
@@ -694,7 +844,7 @@ export default function QuotesPage() {
             <div className="flex justify-between items-start border-b pb-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">TEKLİF</h2>
-                <p className="text-sm text-slate-500">No: {selectedQuote.quote_number}</p>
+                <p className="text-sm text-slate-500">No: {quoteNo(selectedQuote)}</p>
                 <p className="text-sm text-slate-500">Tarih: {formatDate(selectedQuote.created_at)}</p>
               </div>
               <Badge variant={statusConfig[selectedQuote.status]?.variant} className="text-base px-3 py-1">
@@ -769,6 +919,92 @@ export default function QuotesPage() {
             <p className="text-sm text-slate-500 text-center">
               Bu teklif {formatDate(selectedQuote.valid_until)} tarihine kadar geçerlidir.
             </p>
+
+            {/* ISO kayıtları (yazdırmada gizli) */}
+            <div className="space-y-3 border-t pt-4 print:hidden">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                <p className="mb-1 flex items-center gap-1 font-medium text-emerald-800"><ShieldCheck className="h-4 w-4" />Gözden Geçirme Kaydı (ISO 9001 · 8.2.3)</p>
+                {selectedQuote.reviewed_at ? (
+                  <>
+                    <p className="text-emerald-700">{selectedQuote.reviewed_by_name || '-'} · {new Date(selectedQuote.reviewed_at).toLocaleString('tr-TR')}</p>
+                    <ul className="mt-1 space-y-0.5 text-xs text-emerald-700">
+                      {REVIEW_CHECKLIST.map(c => (
+                        <li key={c.key}>{selectedQuote.review_checklist?.[c.key] ? '✓' : '✗'} {c.label}</li>
+                      ))}
+                    </ul>
+                    {selectedQuote.review_notes && <p className="mt-1 text-xs italic text-emerald-700">Not: {selectedQuote.review_notes}</p>}
+                  </>
+                ) : (
+                  <p className="text-amber-700">Bu teklif henüz gözden geçirilmedi.</p>
+                )}
+              </div>
+
+              {(selectedQuote.history?.length || 0) > 1 && (
+                <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <p className="mb-2 flex items-center gap-1 font-medium text-slate-700"><History className="h-4 w-4" />Revizyon Geçmişi</p>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {selectedQuote.history!.map((h: any) => (
+                        <tr key={h.id} className={`border-b last:border-0 ${h.id === selectedQuote.id ? 'font-semibold' : ''}`}>
+                          <td className="py-1">{quoteNo(h)}</td>
+                          <td className="py-1">{new Date(h.created_at).toLocaleDateString('tr-TR')}</td>
+                          <td className="py-1">{statusConfig[h.status]?.label || h.status}</td>
+                          <td className="py-1 text-right">₺{formatMoney(Number(h.total))}</td>
+                          <td className="py-1 pl-2 text-slate-500">{h.revision_reason || (h.revision ? '' : 'İlk sürüm')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ISO 9001 · 8.2.3 Gözden Geçirme */}
+      <Modal
+        isOpen={!!reviewTarget}
+        onClose={() => setReviewTarget(null)}
+        title={`Teklif Gözden Geçirme: ${quoteNo(reviewTarget)}`}
+        size="lg"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setReviewTarget(null)}>Vazgeç</Button>
+            <Button onClick={submitReview} disabled={saving || !REVIEW_CHECKLIST.every(c => reviewChecks[c.key])}>
+              <ShieldCheck className="h-4 w-4" />Gözden Geçirmeyi Onayla
+            </Button>
+          </>
+        }
+      >
+        {reviewTarget && (
+          <div className="space-y-4 text-sm">
+            <p className="text-slate-600">
+              ISO 9001 madde 8.2.3 gereği, teklif müşteriye taahhüt edilmeden önce aşağıdaki maddeler kontrol edilmelidir.
+              Onayınız kim/ne zaman bilgisiyle kayda geçer.
+            </p>
+            <div className="rounded-lg bg-slate-50 p-3">
+              <div className="flex justify-between"><span className="text-slate-500">Müşteri</span><span className="font-medium">{reviewTarget.customer?.name || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Konu</span><span className="font-medium">{reviewTarget.subject || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Genel Toplam</span><span className="font-medium">₺{formatMoney(reviewTarget.total)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Genel İskonto</span><span className="font-medium">%{reviewTarget.discount || 0}</span></div>
+            </div>
+            {Number(reviewTarget.discount) > DISCOUNT_APPROVAL_LIMIT && (
+              <div className={`rounded-lg border p-3 ${isManagerRole ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-red-200 bg-red-50 text-red-700'}`}>
+                İskonto %{DISCOUNT_APPROVAL_LIMIT}'nin üzerinde; yönetici onayı gerekir.
+                {isManagerRole ? ' Yönetici olarak onaylıyorsunuz.' : ' Bu gözden geçirmeyi bir yönetici yapmalıdır.'}
+              </div>
+            )}
+            <div className="space-y-2">
+              {REVIEW_CHECKLIST.map(c => (
+                <label key={c.key} className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 p-2 hover:bg-slate-50">
+                  <input type="checkbox" className="mt-0.5" checked={!!reviewChecks[c.key]}
+                    onChange={(e) => setReviewChecks({ ...reviewChecks, [c.key]: e.target.checked })} />
+                  <span>{c.label}</span>
+                </label>
+              ))}
+            </div>
+            <Textarea label="Gözden geçirme notu (opsiyonel)" value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} rows={2} />
           </div>
         )}
       </Modal>

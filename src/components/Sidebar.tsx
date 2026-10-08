@@ -39,6 +39,7 @@ import {
   Trophy,
   Calculator,
   Receipt,
+  History,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -99,6 +100,7 @@ const toolItems = [
 
 const adminItems = [
   { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog },
+  { href: '/audit', label: 'Değişiklik Geçmişi', icon: History },
 ];
 
 // Süper Admin Menüsü
