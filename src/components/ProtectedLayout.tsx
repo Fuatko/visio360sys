@@ -6,7 +6,17 @@ import { createClient } from '@/lib/supabase';
 import { AuthProvider } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 
-const publicRoutes = ['/login', '/register'];
+const publicRoutes = ['/login', '/register', '/portal/kayit'];
+
+// Bayi portalı kullanıcısı mı? (oturum başına bir kez sorulur)
+let dealerCache: { uid: string; dealer: boolean } | null = null;
+async function isDealerUser(supabase: any, uid: string): Promise<boolean> {
+  if (dealerCache?.uid === uid) return dealerCache.dealer;
+  const { data, error } = await supabase.rpc('is_dealer_user');
+  const dealer = !error && data === true;
+  dealerCache = { uid, dealer };
+  return dealer;
+}
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
@@ -19,10 +29,14 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       
+      const isPortal = pathname.startsWith('/portal');
       if (!session && !publicRoutes.includes(pathname)) {
-        router.push('/login');
-      } else if (session && publicRoutes.includes(pathname)) {
-        router.push('/');
+        router.push(isPortal ? '/login?portal=1' : '/login');
+      } else if (session && publicRoutes.includes(pathname) && pathname !== '/portal/kayit') {
+        router.push((await isDealerUser(supabase, session.user.id)) ? '/portal' : '/');
+      } else if (session && !isPortal && (await isDealerUser(supabase, session.user.id))) {
+        // Bayi kullanıcıları şirket ekranlarına giremez
+        router.replace('/portal');
       } else {
         setAuthenticated(!!session);
         setLoading(false);
@@ -32,8 +46,9 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) dealerCache = null;
       if (!session && !publicRoutes.includes(pathname)) {
-        router.push('/login');
+        router.push(pathname.startsWith('/portal') ? '/login?portal=1' : '/login');
       } else {
         setAuthenticated(!!session);
       }
@@ -53,7 +68,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     );
   }
 
-  if (publicRoutes.includes(pathname)) {
+  if (publicRoutes.includes(pathname) || pathname.startsWith('/portal')) {
     return <>{children}</>;
   }
 

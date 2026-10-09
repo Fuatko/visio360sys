@@ -26,7 +26,13 @@ export default function LoginPage() {
       setError(error.message === 'Invalid login credentials' ? 'E-posta veya şifre hatalı' : error.message);
       setLoading(false);
     } else {
-      router.push('/');
+      // Davetli bayi kullanıcısı ise portala bağla ve yönlendir
+      let portal = false;
+      try {
+        const { data: claim } = await supabase.rpc('portal_claim');
+        portal = !!claim?.linked;
+      } catch { /* bayi portalı kurulu değil */ }
+      router.push(portal ? '/portal' : '/');
       router.refresh();
     }
   };
@@ -100,11 +106,17 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
+            <div className="mt-6 space-y-2 text-center">
               <p className="text-slate-500 text-sm">
                 Hesabınız yok mu?{' '}
                 <Link href="/register" className="text-blue-600 hover:underline font-medium">
                   Kayıt Ol
+                </Link>
+              </p>
+              <p className="text-slate-500 text-sm">
+                Bayimiz misiniz?{' '}
+                <Link href="/portal/kayit" className="text-indigo-600 hover:underline font-medium">
+                  Bayi portalı hesabı oluştur
                 </Link>
               </p>
             </div>

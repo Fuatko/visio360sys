@@ -465,6 +465,7 @@ export default function OrdersPage() {
                             <span className="font-mono text-xs bg-slate-100 px-2 py-1 rounded">
                               {order.order_number}
                             </span>
+                            {(order as any).source === 'portal' && <span className="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700" title={(order as any).notes || ''}>Bayi portalı</span>}
                           </td>
                           <td className="px-4 py-3 font-medium">{customers.find(c => c.id === order.customer_id)?.name || '-'}</td>
                           <td className="px-4 py-3 text-right font-semibold">₺{formatMoney(order.total)}</td>
