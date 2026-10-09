@@ -85,6 +85,7 @@ export default function LeadsPage() {
     estimated_value: 0,
     notes: '',
     assigned_to: '',
+    referral_partner_id: '', referral_commission_rate: '' as any,
   });
 
   const supabase = createClient();
@@ -94,7 +95,7 @@ export default function LeadsPage() {
     try {
       const [leadsRes, teamRes] = await Promise.all([
         supabase.from('leads').select('*').order('created_at', { ascending: false }),
-        supabase.from('sales_team').select('id, name').order('name'),
+        supabase.from('sales_team').select('id, name, member_type, default_commission_rate').order('name'),
       ]);
 
       if (leadsRes.error) {
@@ -131,6 +132,8 @@ export default function LeadsPage() {
         estimated_value: lead.estimated_value || 0,
         notes: lead.notes || '',
         assigned_to: lead.assigned_to || '',
+        referral_partner_id: (lead as any).referral_partner_id || '',
+        referral_commission_rate: (lead as any).referral_commission_rate ?? '',
       });
     } else {
       setEditingLead(null);
@@ -145,6 +148,7 @@ export default function LeadsPage() {
         estimated_value: 0,
         notes: '',
         assigned_to: '',
+        referral_partner_id: '', referral_commission_rate: '' as any,
       });
     }
     setSaveError(null);
@@ -215,7 +219,9 @@ export default function LeadsPage() {
         phone: selectedLead.contact_phone,
         assigned_to: selectedLead.assigned_to,
         source: selectedLead.source,
-        status: 'active',
+        status: 'Aktif',
+        referral_partner_id: (selectedLead as any).referral_partner_id || null,
+        referral_commission_rate: (selectedLead as any).referral_commission_rate ?? null,
       }]);
 
       if (error) throw error;
@@ -546,10 +552,18 @@ export default function LeadsPage() {
             onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
             options={[
               { value: '', label: 'Seçiniz' },
-              ...salesTeam.map(s => ({ value: s.id, label: s.name }))
+              ...salesTeam.filter((t: any) => t.member_type !== 'partner').map(s => ({ value: s.id, label: s.name }))
             ]}
           />
 
+          <div className="grid grid-cols-2 gap-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+            <Select label="Kaynak İş Ortağı" value={formData.referral_partner_id}
+              onChange={(e) => setFormData({ ...formData, referral_partner_id: e.target.value })}
+              options={[{ value: '', label: 'Yok (doğrudan)' }, ...salesTeam.filter((t: any) => t.member_type === 'partner').map((t: any) => ({ value: t.id, label: `${t.name} (%${Number(t.default_commission_rate || 0)})` }))]} />
+            <Input label="Özel komisyon % (boşsa ortağın oranı)" type="number" value={formData.referral_commission_rate}
+              disabled={!formData.referral_partner_id}
+              onChange={(e) => setFormData({ ...formData, referral_commission_rate: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
+          </div>
           <Textarea
             label="Notlar"
             value={formData.notes}

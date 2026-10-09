@@ -53,6 +53,7 @@ export default function OpportunitiesPage() {
   const [formData, setFormData] = useState({
     title: '', customer_id: '', assigned_to: '', value: 0, probability: 50,
     stage: 'Keşif', expected_close: '', notes: '',
+    referral_partner_id: '', referral_commission_rate: '' as any,
   });
 
   const supabase = createClient();
@@ -63,7 +64,7 @@ export default function OpportunitiesPage() {
       const [oppRes, custRes, teamRes] = await Promise.all([
         supabase.from('opportunities').select('*').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name').order('name'),
-        supabase.from('sales_team').select('id, name, region').order('name'),
+        supabase.from('sales_team').select('id, name, region, member_type, default_commission_rate').order('name'),
       ]);
       if (oppRes.error) alert('Fırsatlar yüklenemedi: ' + oppRes.error.message);
       const custs = custRes.data || [];
@@ -96,10 +97,11 @@ export default function OpportunitiesPage() {
         title: opp.title, customer_id: opp.customer_id || '', assigned_to: opp.assigned_to || '',
         value: opp.value || 0, probability: opp.probability || 50, stage: opp.stage || 'Keşif',
         expected_close: opp.expected_close || '', notes: opp.notes || '',
+        referral_partner_id: (opp as any).referral_partner_id || '', referral_commission_rate: (opp as any).referral_commission_rate ?? '',
       });
     } else {
       setEditingOpp(null);
-      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '' });
+      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '', referral_partner_id: '', referral_commission_rate: '' as any, });
     }
     setModalOpen(true);
   };
@@ -285,7 +287,7 @@ export default function OpportunitiesPage() {
             <Select label="Müşteri" value={formData.customer_id} onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
               options={[{ value: '', label: 'Seçiniz' }, ...customers.map(c => ({ value: c.id, label: c.name }))]} />
             <Select label="Sorumlu" value={formData.assigned_to} onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-              options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.map(s => ({ value: s.id, label: s.name }))]} />
+              options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.filter((t: any) => t.member_type !== 'partner').map(s => ({ value: s.id, label: s.name }))]} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Değer (₺)" type="number" value={formData.value} onChange={(e) => setFormData({ ...formData, value: Number(e.target.value) })} />
@@ -295,6 +297,14 @@ export default function OpportunitiesPage() {
             <Select label="Aşama" value={formData.stage} onChange={(e) => setFormData({ ...formData, stage: e.target.value })}
               options={STAGES.map(st => ({ value: st, label: st === 'Kazanıldı' ? 'Kazanıldı ✓' : st === 'Kaybedildi' ? 'Kaybedildi ✗' : st }))} />
             <Input label="Tahmini Kapanış" type="date" value={formData.expected_close} onChange={(e) => setFormData({ ...formData, expected_close: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+            <Select label="Kaynak İş Ortağı" value={formData.referral_partner_id}
+              onChange={(e) => setFormData({ ...formData, referral_partner_id: e.target.value })}
+              options={[{ value: '', label: 'Yok (doğrudan)' }, ...salesTeam.filter((t: any) => t.member_type === 'partner').map((t: any) => ({ value: t.id, label: `${t.name} (%${Number(t.default_commission_rate || 0)})` }))]} />
+            <Input label="Özel komisyon % (boşsa ortağın oranı)" type="number" value={formData.referral_commission_rate}
+              disabled={!formData.referral_partner_id}
+              onChange={(e) => setFormData({ ...formData, referral_commission_rate: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
           </div>
           <Textarea label="Notlar" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
         </div>

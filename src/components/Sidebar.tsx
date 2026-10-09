@@ -40,6 +40,7 @@ import {
   Calculator,
   Receipt,
   History,
+  Handshake,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -49,7 +50,8 @@ import { useAuth } from '@/lib/auth-context';
 const mainItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/executive', label: 'Executive Panel', icon: Shield },
-  { href: '/team', label: 'Satış Ekibi', icon: Users },
+  { href: '/team', label: 'Ekip & İş Ortakları', icon: Users },
+  { href: '/partners', label: 'Ortak Komisyonları', icon: Handshake },
   { href: '/leads', label: 'Potansiyel Müşteriler', icon: UserPlus },
   { href: '/customers', label: 'Müşteriler', icon: Building2 },
   { href: '/customer-360', label: 'Müşteri 360°', icon: Eye },

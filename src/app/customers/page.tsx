@@ -44,6 +44,7 @@ export default function CustomersPage() {
   const [formData, setFormData] = useState({
     name: '', contact_person: '', email: '', phone: '', address: '',
     sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '',
+    referral_partner_id: '', referral_commission_rate: '' as any,
   });
 
   const supabase = createClient();
@@ -53,7 +54,7 @@ export default function CustomersPage() {
     try {
       const [customersRes, teamRes] = await Promise.all([
         supabase.from('customers').select('*, sales_team:assigned_to(name, region)').order('created_at', { ascending: false }),
-        supabase.from('sales_team').select('id, name, region').eq('status', 'active'),
+        supabase.from('sales_team').select('id, name, region, member_type, default_commission_rate').order('name'),
       ]);
       setCustomers(customersRes.data || []);
       setSalesTeam(teamRes.data || []);
@@ -81,11 +82,13 @@ export default function CustomersPage() {
         size: customer.size || '', status: customer.status || 'Potansiyel',
         assigned_to: customer.assigned_to || '', total_sales: customer.total_sales || 0,
         notes: customer.notes || '',
+        referral_partner_id: (customer as any).referral_partner_id || '',
+        referral_commission_rate: (customer as any).referral_commission_rate ?? '',
       });
     } else {
       setEditingCustomer(null);
       setFormData({ name: '', contact_person: '', email: '', phone: '', address: '',
-        sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '' });
+        sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '', referral_partner_id: '', referral_commission_rate: '' as any, });
     }
     setModalOpen(true);
   };
@@ -218,7 +221,15 @@ export default function CustomersPage() {
             <Select label="Sektör" value={formData.sector} onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
               options={[{ value: '', label: 'Seçiniz' }, { value: 'Teknoloji', label: 'Teknoloji' }, { value: 'Üretim', label: 'Üretim' }, { value: 'Perakende', label: 'Perakende' }, { value: 'Finans', label: 'Finans' }, { value: 'Holding', label: 'Holding' }, { value: 'Savunma', label: 'Savunma' }, { value: 'Telekom', label: 'Telekom' }, { value: 'Otomotiv', label: 'Otomotiv' }, { value: 'Turizm', label: 'Turizm' }, { value: 'Gıda', label: 'Gıda' }, { value: 'Eğitim', label: 'Eğitim' }]} />
             <Select label="Sorumlu" value={formData.assigned_to} onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-              options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.map(s => ({ value: s.id, label: s.name }))]} />
+              options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.filter((t: any) => t.member_type !== 'partner').map(s => ({ value: s.id, label: s.name }))]} />
+          </div>
+          <div className="grid grid-cols-2 gap-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+            <Select label="Kaynak İş Ortağı" value={formData.referral_partner_id}
+              onChange={(e) => setFormData({ ...formData, referral_partner_id: e.target.value })}
+              options={[{ value: '', label: 'Yok (doğrudan)' }, ...salesTeam.filter((t: any) => t.member_type === 'partner').map((t: any) => ({ value: t.id, label: `${t.name} (%${Number(t.default_commission_rate || 0)})` }))]} />
+            <Input label="Özel komisyon % (boşsa ortağın oranı)" type="number" value={formData.referral_commission_rate}
+              disabled={!formData.referral_partner_id}
+              onChange={(e) => setFormData({ ...formData, referral_commission_rate: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
           </div>
           <Input label="Toplam Satış (₺)" type="number" value={formData.total_sales} onChange={(e) => setFormData({ ...formData, total_sales: Number(e.target.value) })} />
         </div>

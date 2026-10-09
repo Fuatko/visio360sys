@@ -6,6 +6,8 @@ import { formatDate , cleanPayload } from '@/lib/utils';
 import { Users, Plus, Edit2, Trash2, Mail, Phone, MapPin, Calendar, RefreshCw, Camera, User } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { PARTNER_DEFAULTS, PAYMENT_CHANNELS, ATTRIBUTION_MODES, pickPartnerSettings, calcCommission, PartnerSettings } from '@/lib/partners';
+import { formatMoney } from '@/lib/utils';
 
 interface TeamMember {
   id: string;
@@ -18,6 +20,11 @@ interface TeamMember {
   photo_url: string;
   start_date: string;
   status: string;
+  member_type?: string;
+  partner_company_name?: string;
+  default_commission_rate?: number;
+  payment_channel?: string;
+  [key: string]: any;
 }
 
 // Pastel renk paleti - her kişiye farklı renk
@@ -49,7 +56,9 @@ export default function TeamPage() {
     photo_url: '',
     start_date: new Date().toISOString().split('T')[0],
     status: 'active',
-  });
+    ...PARTNER_DEFAULTS,
+  } as any);
+  const [typeFilter, setTypeFilter] = useState<'all' | 'employee' | 'partner'>('all');
 
   const supabase = createClient();
 
@@ -90,6 +99,7 @@ export default function TeamPage() {
         photo_url: person.photo_url || '',
         start_date: person.start_date || new Date().toISOString().split('T')[0],
         status: person.status || 'active',
+        ...pickPartnerSettings(person),
       });
     } else {
       setEditingPerson(null);
@@ -103,6 +113,8 @@ export default function TeamPage() {
         photo_url: '',
         start_date: new Date().toISOString().split('T')[0],
         status: 'active',
+        ...PARTNER_DEFAULTS,
+        member_type: typeFilter === 'partner' ? 'partner' : 'employee',
       });
     }
     setModalOpen(true);
@@ -176,7 +188,7 @@ export default function TeamPage() {
   if (loading) {
     return (
       <div>
-        <Header title="Satış Ekibi" />
+        <Header title="Ekip & İş Ortakları" />
         <div className="flex h-96 items-center justify-center">
           <div className="text-center">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600 mx-auto" />
@@ -189,13 +201,17 @@ export default function TeamPage() {
 
   return (
     <div>
-      <Header title="Satış Ekibi" />
+      <Header title="Ekip & İş Ortakları" />
       
       <div className="p-6">
         {/* Header Actions */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <p className="text-sm text-slate-500">Toplam {team.length} satış uzmanı</p>
+            <div className="flex gap-1 rounded-lg bg-slate-100 p-1 text-sm">
+              {([['all', `Tümü (${team.length})`], ['employee', `Çalışanlar (${team.filter(t => (t.member_type || 'employee') === 'employee').length})`], ['partner', `İş Ortakları (${team.filter(t => t.member_type === 'partner').length})`]] as const).map(([k, l]) => (
+                <button key={k} onClick={() => setTypeFilter(k)} className={`rounded-md px-3 py-1 ${typeFilter === k ? 'bg-white shadow-sm font-medium' : 'text-slate-500'}`}>{l}</button>
+              ))}
+            </div>
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={fetchTeam}>
@@ -219,7 +235,7 @@ export default function TeamPage() {
         {/* Team Grid */}
         {team.length > 0 ? (
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {team.map((person, index) => (
+            {team.filter(t => typeFilter === 'all' || (t.member_type || 'employee') === typeFilter).map((person, index) => (
               <Card key={person.id} className="overflow-hidden hover:shadow-lg transition-shadow duration-300">
                 {/* Header - Pastel Gradient */}
                 <div className={`bg-gradient-to-br ${getCardColor(index)} px-4 py-5`}>
@@ -243,7 +259,14 @@ export default function TeamPage() {
                     
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-white text-lg truncate">{person.name}</h3>
-                      <p className="text-sm text-white/80 truncate">{person.title || 'Satış Uzmanı'}</p>
+                      <p className="text-sm text-white/80 truncate">
+                        {person.member_type === 'partner' ? (person.partner_company_name || 'İş Ortağı') : (person.title || 'Satış Uzmanı')}
+                      </p>
+                      {person.member_type === 'partner' && (
+                        <span className="mt-1 inline-block rounded bg-white/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                          İş Ortağı · %{Number(person.default_commission_rate || 0)}
+                        </span>
+                      )}
                       {person.region && (
                         <p className="text-xs text-white/60 flex items-center gap-1 mt-1">
                           <MapPin className="h-3 w-3" />
@@ -316,6 +339,14 @@ export default function TeamPage() {
         }
       >
         <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            {[['employee', 'Çalışan'], ['partner', 'İş Ortağı']].map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setFormData({ ...formData, member_type: k })}
+                className={`rounded-lg border px-3 py-2 text-sm ${formData.member_type === k ? 'border-indigo-500 bg-indigo-50 font-medium text-indigo-700' : 'border-slate-200 text-slate-600'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
           {/* Fotoğraf Önizleme ve URL */}
           <div>
             <label className="text-xs font-medium text-slate-600 mb-2 block">Profil Fotoğrafı</label>
@@ -422,6 +453,65 @@ export default function TeamPage() {
               { value: 'inactive', label: 'Pasif' },
             ]}
           />
+          {formData.member_type === 'partner' && (() => {
+            const preview = calcCommission(10000, formData as PartnerSettings);
+            const num = (k: string) => (e: any) => setFormData({ ...formData, [k]: parseFloat(e.target.value) || 0 });
+            return (
+              <div className="space-y-4 rounded-lg border border-indigo-200 bg-indigo-50/40 p-4">
+                <h4 className="text-sm font-semibold text-indigo-800">İş Ortağı ve Komisyon Bilgileri</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Firma / Ticari Unvan" value={formData.partner_company_name} placeholder="Şahıs ise boş bırakın"
+                    onChange={(e) => setFormData({ ...formData, partner_company_name: e.target.value })} />
+                  <Input label="VKN / TCKN" value={formData.partner_tax_no} onChange={(e) => setFormData({ ...formData, partner_tax_no: e.target.value })} />
+                  <Input label="Vergi Dairesi" value={formData.partner_tax_office} onChange={(e) => setFormData({ ...formData, partner_tax_office: e.target.value })} />
+                  <Input label="IBAN" value={formData.partner_iban} onChange={(e) => setFormData({ ...formData, partner_iban: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <Input label="Varsayılan Komisyon (%)" type="number" value={formData.default_commission_rate} onChange={num('default_commission_rate')} />
+                  <Select label="Komisyon Süresi" value={formData.attribution_mode}
+                    onChange={(e) => setFormData({ ...formData, attribution_mode: e.target.value })}
+                    options={Object.entries(ATTRIBUTION_MODES).map(([value, label]) => ({ value, label }))} />
+                  {formData.attribution_mode === 'months' ? (
+                    <Input label="Süre (ay)" type="number" value={formData.attribution_months} onChange={num('attribution_months')} />
+                  ) : <div />}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <Input label="Sözleşme Başlangıç" type="date" value={formData.contract_start || ''} onChange={(e) => setFormData({ ...formData, contract_start: e.target.value })} />
+                  <Input label="Sözleşme Bitiş" type="date" value={formData.contract_end || ''} onChange={(e) => setFormData({ ...formData, contract_end: e.target.value })} />
+                </div>
+                <div>
+                  <Select label="Ödeme Yolu" value={formData.payment_channel}
+                    onChange={(e) => setFormData({ ...formData, payment_channel: e.target.value })}
+                    options={Object.entries(PAYMENT_CHANNELS).map(([value, c]) => ({ value, label: c.label }))} />
+                  <p className="mt-1 text-xs text-slate-500">{PAYMENT_CHANNELS[formData.payment_channel]?.hint}</p>
+                </div>
+                {formData.payment_channel === 'withholding' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="Stopaj (%)" type="number" value={formData.withholding_rate} onChange={num('withholding_rate')} />
+                    <Input label="Damga Vergisi (%)" type="number" step="0.001" value={formData.stamp_tax_rate} onChange={num('stamp_tax_rate')} />
+                  </div>
+                )}
+                {formData.payment_channel === 'owner_payout' && (
+                  <Input label="Huzur hakkı vergi yükü (%) — gelir vergisi dilimi + damga" type="number" value={formData.owner_tax_rate} onChange={num('owner_tax_rate')} />
+                )}
+                {formData.payment_channel === 'payroll' && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="Çalışan kesintisi (%) — SGK, işsizlik, GV, DV" type="number" value={formData.payroll_deduction_rate} onChange={num('payroll_deduction_rate')} />
+                    <Input label="SGK işveren + işsizlik (%)" type="number" value={formData.employer_cost_rate} onChange={num('employer_cost_rate')} />
+                  </div>
+                )}
+                <div className="rounded-lg bg-white p-3 text-xs">
+                  <p className="mb-1 font-medium text-slate-700">Örnek: ₺10.000 brüt komisyon</p>
+                  <div className="grid grid-cols-3 gap-2 text-slate-600">
+                    <div>Kesintiler<br /><span className="font-semibold text-red-600">₺{formatMoney(preview.withholding + preview.stamp)}</span></div>
+                    <div>Ortağın eline geçen<br /><span className="font-semibold text-green-700">₺{formatMoney(preview.net)}</span></div>
+                    <div>Şirkete maliyet<br /><span className="font-semibold text-indigo-700">₺{formatMoney(preview.cost)}</span></div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-400">Oranlar yaklaşıktır; mali müşavirinizle teyit edip güncelleyin.</p>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </Modal>
     </div>
