@@ -69,7 +69,7 @@ export default function InvoicesPage() {
     setLoading(true);
     const [invRes, custRes, teamRes, prodRes, ordRes] = await Promise.all([
       supabase.from('invoices').select('*').order('created_at', { ascending: false }),
-      supabase.from('customers').select('id, name').order('name'),
+      supabase.from('customers').select('id, name, payment_term_days').order('name'),
       supabase.from('sales_team').select('id, name').order('name'),
       supabase.from('products').select('id, name, price, tax_rate').order('name'),
       supabase.from('orders').select('id, order_number'),
@@ -302,7 +302,11 @@ export default function InvoicesPage() {
         <div className="space-y-5">
           {formError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"><strong>Kaydedilemedi:</strong> {formError}</div>}
           <div className="grid gap-4 md:grid-cols-2">
-            <Select label="Müşteri *" value={header.customer_id} onChange={e => setHeader({ ...header, customer_id: e.target.value })}
+            <Select label="Müşteri *" value={header.customer_id} onChange={e => {
+              const c: any = customers.find(x => x.id === e.target.value);
+              const term = c?.payment_term_days ?? DEFAULT_PAYMENT_TERM_DAYS;
+              setHeader({ ...header, customer_id: e.target.value, due_date: addDays(header.issue_date, Number(term)) });
+            }}
               options={[{ value: '', label: 'Seçiniz' }, ...customers.map(c => ({ value: c.id, label: c.name }))]} />
             <Select label="Satış Temsilcisi" value={header.sales_person_id} onChange={e => setHeader({ ...header, sales_person_id: e.target.value })}
               options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.map(s => ({ value: s.id, label: s.name }))]} />

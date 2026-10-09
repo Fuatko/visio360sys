@@ -9,6 +9,8 @@ import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createInvoiceFromOrder } from '@/lib/invoicing';
 import { nextDocumentNumber } from '@/lib/doc-number';
+import { useDealerPricing } from '@/lib/use-dealer-pricing';
+import DealerTermBar from '@/components/DealerTermBar';
 
 interface Order {
   id: string;
@@ -105,9 +107,21 @@ export default function OrdersPage() {
     unit_price: number;
     discount: number;
     tax_rate: number;
+    note?: string;
   }[]>([]);
 
   const supabase = createClient();
+  const pricing = useDealerPricing(supabase);
+  const [paymentTerm, setPaymentTerm] = useState<number>(30);
+
+  // Bayi ise kalemlere bayi fiyatı ve iskontosunu uygular
+  const repriceItems = (list: typeof items, customerId: string, term: number, keepPrice = false) =>
+    list.map(it => {
+      if (!it.product_id) return it;
+      const pr = pricing.priceFor(customerId, it.product_id, Number(it.quantity) || 1, term);
+      if (!pr) return { ...it, note: undefined };
+      return { ...it, unit_price: keepPrice ? it.unit_price : pr.listPrice, discount: pr.discountPct, note: pr.explanation };
+    });
 
   const fetchData = async () => {
     setLoading(true);
@@ -143,6 +157,7 @@ export default function OrdersPage() {
       delivery_date: '',
     });
     setItems([{ product_id: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 20 }]);
+    setPaymentTerm(30);
     setModalOpen(true);
   };
 
@@ -166,6 +181,12 @@ export default function OrdersPage() {
       }
     }
     
+    // Bayi fiyatlandırması: ürün değişince fiyat+iskonto, miktar değişince iskonto yeniden hesaplanır
+    if ((field === 'product_id' || field === 'quantity') && formData.customer_id) {
+      const [repriced] = repriceItems([newItems[index]], formData.customer_id, paymentTerm, field === 'quantity');
+      newItems[index] = repriced;
+    }
+
     setItems(newItems);
   };
 
@@ -177,6 +198,14 @@ export default function OrdersPage() {
       shipping_address: customer?.address || '',
       billing_address: customer?.address || '',
     });
+    const term = pricing.defaultTerm(customerId) ?? 30;
+    setPaymentTerm(term);
+    setItems(repriceItems(items, customerId, term));
+  };
+
+  const changeTerm = (term: number) => {
+    setPaymentTerm(term);
+    if (formData.customer_id) setItems(repriceItems(items, formData.customer_id, term));
   };
 
   const calculateTotals = () => {
@@ -208,11 +237,18 @@ export default function OrdersPage() {
       return;
     }
 
+    {
+      const { total: t } = calculateTotals();
+      const cc = pricing.creditCheck(formData.customer_id, t);
+      if (cc.exceeded && !confirm(`Bu sipariş müşterinin kredi limitini aşıyor.\n\nLimit: ₺${formatMoney(cc.limit || 0)}\nAçık alacak: ₺${formatMoney(cc.open)}\nBu siparişle: ₺${formatMoney(cc.after)}\n\nYine de kaydedilsin mi?`)) return;
+    }
+
     setSaving(true);
     try {
       const { subtotal, taxTotal, total } = calculateTotals();
       
       const orderData = {
+        payment_term_days: paymentTerm,
         order_number: await nextDocumentNumber(supabase, 'order'),
         customer_id: formData.customer_id,
         shipping_address: formData.shipping_address,
@@ -536,6 +572,14 @@ export default function OrdersPage() {
             />
           </div>
 
+          <DealerTermBar
+            termDays={paymentTerm}
+            onTermChange={changeTerm}
+            dealer={pricing.getDealer(formData.customer_id)}
+            credit={formData.customer_id ? pricing.creditCheck(formData.customer_id, calculateTotals().total) : null}
+            onReapply={() => setItems(repriceItems(items, formData.customer_id, paymentTerm))}
+          />
+
           <div className="grid grid-cols-2 gap-4">
             <Textarea
               label="Teslimat Adresi"
@@ -562,7 +606,7 @@ export default function OrdersPage() {
             
             <div className="space-y-3">
               {items.map((item, index) => (
-                <div key={index} className="flex gap-2 items-start p-3 bg-slate-50 rounded-lg">
+                <div key={index} className="flex flex-wrap gap-2 items-start p-3 bg-slate-50 rounded-lg">
                   <div className="flex-1 grid grid-cols-5 gap-2">
                     <div className="col-span-2">
                       <select
@@ -602,6 +646,7 @@ export default function OrdersPage() {
                   <Button variant="ghost" size="sm" onClick={() => removeItem(index)} disabled={items.length === 1}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
+                  {item.note && <p className="basis-full text-[11px] text-amber-700">Bayi fiyatı: {item.note}</p>}
                 </div>
               ))}
             </div>

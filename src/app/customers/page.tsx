@@ -7,6 +7,7 @@ import { formatMoney, cleanPayload } from '@/lib/utils';
 import { Building2, Plus, Edit2, Trash2, Mail, Phone, User, RefreshCw, Search } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { DEALER_LEVELS, PAYMENT_TERMS, termLabel } from '@/lib/dealer-pricing';
 
 interface Customer {
   id: string;
@@ -46,7 +47,10 @@ export default function CustomersPage() {
     name: '', contact_person: '', contact_title: '', email: '', phone: '', address: '',
     sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '',
     referral_partner_id: '', referral_commission_rate: '' as any,
+    customer_type: 'end_customer', dealer_code: '', dealer_level: '', region: '', credit_limit: '' as any, payment_term_days: '' as any, price_list_id: '', base_discount: 0, dealer_since: '',
   });
+  const [priceLists, setPriceLists] = useState<{ id: string; name: string }[]>([]);
+  const [filterType, setFilterType] = useState('');
 
   const supabase = createClient();
 
@@ -57,6 +61,8 @@ export default function CustomersPage() {
         supabase.from('customers').select('*, sales_team:assigned_to(name, region)').order('created_at', { ascending: false }),
         supabase.from('sales_team').select('id, name, region, member_type, default_commission_rate').order('name'),
       ]);
+      const { data: pls } = await supabase.from('price_lists').select('id, name').eq('is_active', true).order('name');
+      setPriceLists(pls || []);
       setCustomers(customersRes.data || []);
       setSalesTeam(teamRes.data || []);
     } catch (err: any) {
@@ -85,11 +91,20 @@ export default function CustomersPage() {
         notes: customer.notes || '',
         referral_partner_id: (customer as any).referral_partner_id || '',
         referral_commission_rate: (customer as any).referral_commission_rate ?? '',
+        customer_type: (customer as any).customer_type || 'end_customer',
+        dealer_code: (customer as any).dealer_code || '',
+        dealer_level: (customer as any).dealer_level || '',
+        region: (customer as any).region || '',
+        credit_limit: (customer as any).credit_limit ?? '',
+        payment_term_days: (customer as any).payment_term_days ?? '',
+        price_list_id: (customer as any).price_list_id || '',
+        base_discount: Number((customer as any).base_discount) || 0,
+        dealer_since: (customer as any).dealer_since || '',
       });
     } else {
       setEditingCustomer(null);
       setFormData({ name: '', contact_person: '', contact_title: '', email: '', phone: '', address: '',
-        sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '', referral_partner_id: '', referral_commission_rate: '' as any, });
+        sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '', referral_partner_id: '', referral_commission_rate: '' as any, dealer_code: '', dealer_level: '', region: '', credit_limit: '' as any, payment_term_days: '' as any, price_list_id: '', base_discount: 0, dealer_since: '', customer_type: filterType === 'dealer' ? 'dealer' : 'end_customer' } as any);
     }
     setModalOpen(true);
   };
@@ -123,9 +138,10 @@ export default function CustomersPage() {
   const filtered = customers.filter(c => {
     const matchSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchStatus = !filterStatus || c.status === filterStatus;
+    const matchType = !filterType || ((c as any).customer_type || 'end_customer') === filterType;
     const matchPerson = !filterPerson || c.assigned_to === filterPerson;
     const matchRegion = !filterRegion || (c.sales_team?.region === filterRegion);
-    return matchSearch && matchStatus && matchPerson && matchRegion;
+    return matchSearch && matchStatus && matchType && matchPerson && matchRegion;
   });
 
   const getAssignedName = (id: string | null) => {
@@ -158,6 +174,11 @@ export default function CustomersPage() {
               <option value="Aktif">Aktif</option>
               <option value="Potansiyel">Potansiyel</option>
             </select>
+            <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="h-9 rounded-lg border border-slate-200 px-3 text-sm">
+              <option value="">Tüm Türler</option>
+              <option value="end_customer">Son Kullanıcı</option>
+              <option value="dealer">Bayi</option>
+            </select>
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={fetchData}><RefreshCw className="h-4 w-4" /></Button>
@@ -178,7 +199,15 @@ export default function CustomersPage() {
               <Card key={c.id}>
                 <CardBody>
                   <div className="mb-3 flex items-start justify-between">
-                    <div><h3 className="font-semibold">{c.name}</h3><p className="text-xs text-slate-500">{c.sector}</p></div>
+                    <div>
+                      <h3 className="font-semibold">{c.name}</h3>
+                      <p className="text-xs text-slate-500">{c.sector}</p>
+                      {(c as any).customer_type === 'dealer' && (
+                        <span className="mt-1 inline-block rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">
+                          Bayi{(c as any).dealer_level ? ` · ${(c as any).dealer_level}` : ''}{(c as any).payment_term_days != null ? ` · ${termLabel((c as any).payment_term_days)}` : ''}
+                        </span>
+                      )}
+                    </div>
                     <Badge variant={c.status === 'VIP' ? 'warning' : c.status === 'Aktif' ? 'success' : 'info'}>{c.status}</Badge>
                   </div>
                   <div className="space-y-1 text-sm text-slate-600">
@@ -205,9 +234,15 @@ export default function CustomersPage() {
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editingCustomer ? 'Düzenle' : 'Yeni Müşteri'}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} size="lg" title={editingCustomer ? 'Düzenle' : formData.customer_type === 'dealer' ? 'Yeni Bayi' : 'Yeni Müşteri'}
         footer={<><Button variant="secondary" onClick={() => setModalOpen(false)}>İptal</Button><Button onClick={handleSave} disabled={saving}>{saving ? 'Kaydediliyor...' : 'Kaydet'}</Button></>}>
         <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            {[['end_customer', 'Son Kullanıcı / Müşteri'], ['dealer', 'Bayi']].map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setFormData({ ...formData, customer_type: k })}
+                className={`rounded-lg border px-3 py-2 text-sm ${formData.customer_type === k ? 'border-indigo-500 bg-indigo-50 font-medium text-indigo-700' : 'border-slate-200 text-slate-600'}`}>{l}</button>
+            ))}
+          </div>
           <Input label="Firma Adı *" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Yetkili Kişi" value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} />
@@ -225,6 +260,29 @@ export default function CustomersPage() {
             <Select label="Sorumlu (temsilci veya iş ortağı)" value={formData.assigned_to} onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
               options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.map((s: any) => ({ value: s.id, label: s.member_type === 'partner' ? `${s.name} (İş Ortağı)` : s.name }))]} />
           </div>
+          {formData.customer_type === 'dealer' && (
+            <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+              <h4 className="text-sm font-semibold text-amber-800">Bayi Kartı</h4>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                <Input label="Bayi Kodu" value={formData.dealer_code} onChange={(e) => setFormData({ ...formData, dealer_code: e.target.value })} />
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Bayi Seviyesi</label>
+                  <input list="dealer-levels" value={formData.dealer_level} onChange={(e) => setFormData({ ...formData, dealer_level: e.target.value })}
+                    placeholder="Altın, Gümüş..." className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                  <datalist id="dealer-levels">{DEALER_LEVELS.map(l => <option key={l} value={l} />)}</datalist>
+                </div>
+                <Input label="Bölge" value={formData.region} onChange={(e) => setFormData({ ...formData, region: e.target.value })} placeholder="Ege, İç Anadolu..." />
+                <Select label="Fiyat Listesi" value={formData.price_list_id} onChange={(e) => setFormData({ ...formData, price_list_id: e.target.value })}
+                  options={[{ value: '', label: 'Ürün liste fiyatı' }, ...priceLists.map(pl => ({ value: pl.id, label: pl.name }))]} />
+                <Select label="Standart Vade" value={String(formData.payment_term_days)} onChange={(e) => setFormData({ ...formData, payment_term_days: e.target.value === '' ? '' : Number(e.target.value) })}
+                  options={[{ value: '', label: 'Belirtilmedi' }, ...PAYMENT_TERMS.map(t => ({ value: String(t.days), label: t.label }))]} />
+                <Input label="Temel İskonto (%)" type="number" value={formData.base_discount} onChange={(e) => setFormData({ ...formData, base_discount: parseFloat(e.target.value) || 0 })} />
+                <Input label="Kredi Limiti (₺, boş = limitsiz)" type="number" value={formData.credit_limit} onChange={(e) => setFormData({ ...formData, credit_limit: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
+                <Input label="Bayilik Başlangıcı" type="date" value={formData.dealer_since} onChange={(e) => setFormData({ ...formData, dealer_since: e.target.value })} />
+              </div>
+              <p className="text-[11px] text-slate-500">Vadeye, ürüne veya seviyeye göre değişen iskontolar Bayi Yönetimi → İskonto Kuralları'ndan tanımlanır; temel iskonto, hiçbir kural uymadığında uygulanır.</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
             <Select label="Kaynak İş Ortağı" value={formData.referral_partner_id}
               onChange={(e) => setFormData({ ...formData, referral_partner_id: e.target.value, assigned_to: formData.assigned_to || e.target.value })}

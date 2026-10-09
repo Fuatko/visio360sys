@@ -9,6 +9,8 @@ import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createOrderFromQuote } from '@/lib/sales-flow';
 import { nextDocumentNumber } from '@/lib/doc-number';
+import { useDealerPricing } from '@/lib/use-dealer-pricing';
+import DealerTermBar from '@/components/DealerTermBar';
 import { useAuth } from '@/lib/auth-context';
 
 // ISO 9001 madde 8.2.3: teklif müşteriye taahhüt edilmeden önce gözden geçirilir
@@ -123,9 +125,33 @@ export default function QuotesPage() {
     unit_price: number;
     discount: number;
     tax_rate: number;
+    note?: string;
   }[]>([]);
 
   const supabase = createClient();
+  const pricing = useDealerPricing(supabase);
+  const [paymentTerm, setPaymentTerm] = useState<number>(30);
+
+  // Bayi ise kalemlere bayi fiyatı ve iskontosunu uygular
+  const repriceItems = (list: typeof items, customerId: string, term: number, keepPrice = false) =>
+    list.map(it => {
+      if (!it.product_id) return it;
+      const pr = pricing.priceFor(customerId, it.product_id, Number(it.quantity) || 1, term);
+      if (!pr) return { ...it, note: undefined };
+      return { ...it, unit_price: keepPrice ? it.unit_price : pr.listPrice, discount: pr.discountPct, note: pr.explanation };
+    });
+
+  const changeCustomer = (customerId: string) => {
+    setFormData(f => ({ ...f, customer_id: customerId }));
+    const term = pricing.defaultTerm(customerId) ?? 30;
+    setPaymentTerm(term);
+    setItems(list => repriceItems(list, customerId, term));
+  };
+
+  const changeTerm = (term: number) => {
+    setPaymentTerm(term);
+    if (formData.customer_id) setItems(list => repriceItems(list, formData.customer_id, term));
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -165,6 +191,7 @@ export default function QuotesPage() {
         discount: 0,
       });
       setItems([{ product_id: '', quantity: 1, unit_price: Number(opp.value) || 0, discount: 0, tax_rate: 20 }]);
+      setPaymentTerm(30);
       setModalOpen(true);
       window.history.replaceState(null, '', '/quotes');
     })();
@@ -182,6 +209,7 @@ export default function QuotesPage() {
     setOpportunityLink(null);
     setRevisionSource(null);
     setRevisionReason('');
+    setPaymentTerm(30);
     setModalOpen(true);
   };
 
@@ -242,6 +270,7 @@ export default function QuotesPage() {
     setOpportunityLink(null);
     setRevisionSource(q);
     setRevisionReason('');
+    setPaymentTerm((q as any).payment_term_days ?? pricing.defaultTerm(q.customer_id) ?? 30);
     setModalOpen(true);
   };
 
@@ -266,6 +295,11 @@ export default function QuotesPage() {
       }
     }
     
+    if ((field === 'product_id' || field === 'quantity') && formData.customer_id) {
+      const [repriced] = repriceItems([newItems[index]], formData.customer_id, paymentTerm, field === 'quantity');
+      newItems[index] = repriced;
+    }
+
     setItems(newItems);
   };
 
@@ -310,6 +344,7 @@ export default function QuotesPage() {
 
       const quoteData = {
         quote_number: rev ? rev.quote_number : await nextDocumentNumber(supabase, 'quote'),
+        payment_term_days: paymentTerm,
         revision: rev ? (Number(rev.revision) || 0) + 1 : 0,
         root_quote_id: rev ? (rev.root_quote_id || rev.id) : null,
         revision_reason: rev ? revisionReason.trim() : null,
@@ -694,7 +729,7 @@ export default function QuotesPage() {
             <Select
               label="Müşteri *"
               value={formData.customer_id}
-              onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
+              onChange={(e) => changeCustomer(e.target.value)}
               options={[
                 { value: '', label: 'Müşteri Seçin' },
                 ...customers.map(c => ({ value: c.id, label: c.name }))
@@ -707,6 +742,14 @@ export default function QuotesPage() {
               onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
             />
           </div>
+
+          <DealerTermBar
+            termDays={paymentTerm}
+            onTermChange={changeTerm}
+            dealer={pricing.getDealer(formData.customer_id)}
+            credit={formData.customer_id ? pricing.creditCheck(formData.customer_id, calculateTotals().total) : null}
+            onReapply={() => setItems(list => repriceItems(list, formData.customer_id, paymentTerm))}
+          />
 
           <Input
             label="Teklif Konusu"
@@ -726,7 +769,7 @@ export default function QuotesPage() {
             
             <div className="space-y-3">
               {items.map((item, index) => (
-                <div key={index} className="flex gap-2 items-start p-3 bg-slate-50 rounded-lg">
+                <div key={index} className="flex flex-wrap gap-2 items-start p-3 bg-slate-50 rounded-lg">
                   <div className="flex-1 grid grid-cols-5 gap-2">
                     <div className="col-span-2">
                       <select
@@ -768,6 +811,7 @@ export default function QuotesPage() {
                   <Button variant="ghost" size="sm" onClick={() => removeItem(index)} disabled={items.length === 1}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
+                  {item.note && <p className="basis-full text-[11px] text-amber-700">Bayi fiyatı: {item.note}</p>}
                 </div>
               ))}
             </div>

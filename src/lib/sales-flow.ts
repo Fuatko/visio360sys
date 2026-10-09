@@ -41,6 +41,7 @@ export async function createOrderFromQuote(supabase: Supa, quoteId: string) {
       notes: `${quote.quote_number || 'Teklif'} numaralı tekliften oluşturuldu.${quote.subject ? ' Konu: ' + quote.subject : ''}`,
       quote_id: quote.id,
       opportunity_id: quote.opportunity_id || null,
+      payment_term_days: quote.payment_term_days ?? null,
     }])
     .select()
     .single();

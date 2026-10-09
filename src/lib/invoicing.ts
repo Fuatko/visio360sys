@@ -116,7 +116,18 @@ export async function createInvoiceFromOrder(supabase: Supa, orderId: string) {
     tax_rate: it.tax_rate != null ? Number(it.tax_rate) : 20,
   }));
 
+  let termDays: number = DEFAULT_PAYMENT_TERM_DAYS;
+  if (order.payment_term_days !== null && order.payment_term_days !== undefined) {
+    termDays = Number(order.payment_term_days);
+  } else if (order.customer_id) {
+    const { data: cust } = await supabase.from('customers').select('payment_term_days').eq('id', order.customer_id).single();
+    if (cust?.payment_term_days !== null && cust?.payment_term_days !== undefined) termDays = Number(cust.payment_term_days);
+  }
+  const issueDate = new Date().toISOString().split('T')[0];
+
   const invoice = await createDraftInvoice(supabase, {
+    issue_date: issueDate,
+    due_date: addDays(issueDate, termDays),
     customer_id: order.customer_id,
     sales_person_id: order.sales_person_id,
     order_id: order.id,

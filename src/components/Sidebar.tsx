@@ -41,6 +41,7 @@ import {
   Receipt,
   History,
   Handshake,
+  Store,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -67,6 +68,7 @@ const salesItems = [
   { href: '/invoices', label: 'Faturalar', icon: Receipt },
   { href: '/contracts', label: 'Sözleşmeler', icon: ScrollText },
   { href: '/collections', label: 'Tahsilat', icon: Wallet },
+  { href: '/dealers', label: 'Bayi Yönetimi', icon: Store },
 ];
 
 // Planlama & Analiz
