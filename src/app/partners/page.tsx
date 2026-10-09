@@ -3,12 +3,15 @@
 import Header from '@/components/Header';
 import { Card, Button, Badge, Modal, Input, Textarea, EmptyState } from '@/components/ui';
 import { formatMoney, formatDate } from '@/lib/utils';
-import { Handshake, RefreshCw, Download, CheckCircle, Banknote, XCircle, Users, Info } from 'lucide-react';
+import { Handshake, RefreshCw, Download, CheckCircle, Banknote, XCircle, Users, Info, FileText, Calculator, LayoutList } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { PAYMENT_CHANNELS, ATTRIBUTION_MODES, COMMISSION_STATUS } from '@/lib/partners';
 import { exportToCSV, downloadFile } from '@/lib/csv-utils';
+import { useAuth } from '@/lib/auth-context';
+import CommissionSimulator from '@/components/partners/CommissionSimulator';
+import PartnerStatement from '@/components/partners/PartnerStatement';
 
 interface Commission {
   id: string;
@@ -49,6 +52,10 @@ export default function PartnersPage() {
   const [opps, setOpps] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const { profile } = useAuth();
+  const [tab, setTab] = useState<'overview' | 'simulation'>('overview');
+  const [statementPartner, setStatementPartner] = useState<any | null>(null);
+  const [companyName, setCompanyName] = useState('');
   const [filterPartner, setFilterPartner] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
@@ -64,10 +71,10 @@ export default function PartnersPage() {
     const [pRes, cRes, custRes, invRes, lRes, oRes] = await Promise.all([
       supabase.from('sales_team').select('*').eq('member_type', 'partner').order('name'),
       supabase.from('partner_commissions').select('*').order('accrued_at', { ascending: false }),
-      supabase.from('customers').select('id, name, referral_partner_id'),
-      supabase.from('invoices').select('id, invoice_number, customer_id, referral_partner_id, subtotal, discount_amount, total, paid_amount, status'),
+      supabase.from('customers').select('id, name, referral_partner_id, referral_commission_rate'),
+      supabase.from('invoices').select('id, invoice_number, customer_id, referral_partner_id, referral_commission_rate, subtotal, discount_amount, total, paid_amount, status, issue_date, due_date'),
       supabase.from('leads').select('id, status, referral_partner_id'),
-      supabase.from('opportunities').select('id, stage, referral_partner_id'),
+      supabase.from('opportunities').select('id, title, stage, value, probability, customer_id, referral_partner_id, referral_commission_rate'),
     ]);
     const firstErr = [pRes, cRes].find(r => r.error)?.error;
     if (firstErr) setError(firstErr.message);
@@ -81,6 +88,11 @@ export default function PartnersPage() {
   };
 
   useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    const orgId = (profile as any)?.organization_id;
+    if (!orgId) return;
+    supabase.from('organizations').select('name').eq('id', orgId).single().then(({ data }) => setCompanyName(data?.name || ''));
+  }, [(profile as any)?.organization_id]);
 
   const partnerName = (id: string) => partners.find(p => p.id === id)?.name || '-';
   const customerName = (id: string | null) => customers.find(c => c.id === id)?.name || '-';
@@ -192,6 +204,16 @@ export default function PartnersPage() {
           </div>
         )}
 
+        <div className="flex gap-1 rounded-lg bg-slate-100 p-1 text-sm w-fit">
+          <button onClick={() => setTab('overview')} className={`flex items-center gap-1 rounded-md px-3 py-1.5 ${tab === 'overview' ? 'bg-white font-medium shadow-sm' : 'text-slate-500'}`}><LayoutList className="h-4 w-4" />Genel Bakış & Defter</button>
+          <button onClick={() => setTab('simulation')} className={`flex items-center gap-1 rounded-md px-3 py-1.5 ${tab === 'simulation' ? 'bg-white font-medium shadow-sm' : 'text-slate-500'}`}><Calculator className="h-4 w-4" />Komisyon Simülasyonu</button>
+        </div>
+
+        {tab === 'simulation' && (
+          <CommissionSimulator partners={partners} opportunities={opps} invoices={invoices} customers={customers} companyName={companyName} />
+        )}
+
+        {tab === 'overview' && (<>
         <div className="grid gap-4 md:grid-cols-5">
           <Card className="p-4"><p className="text-2xl font-bold">{partners.length}</p><p className="text-xs text-slate-500">İş Ortağı</p></Card>
           <Card className="p-4"><p className="text-2xl font-bold text-blue-600">₺{formatMoney(totals.collectedNet)}</p><p className="text-xs text-slate-500">Ortak kaynaklı tahsilat (KDV hariç)</p></Card>
@@ -230,6 +252,7 @@ export default function PartnersPage() {
                     <th className="px-3 py-2 text-right font-medium">Ödenen (net)</th>
                     <th className="px-3 py-2 text-right font-medium">Bekleyen (net)</th>
                     <th className="px-3 py-2 text-right font-medium">Toplam Maliyet</th>
+                    <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -252,6 +275,11 @@ export default function PartnersPage() {
                       <td className="px-3 py-2 text-right text-green-700">₺{formatMoney(r.paidNet)}</td>
                       <td className="px-3 py-2 text-right text-red-600">₺{formatMoney(r.pendingNet)}</td>
                       <td className="px-3 py-2 text-right text-indigo-700">₺{formatMoney(r.totalCost)}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Button variant="ghost" size="sm" title="Hesap özeti / mutabakat" onClick={(e) => { e.stopPropagation(); setStatementPartner(r.p); }}>
+                          <FileText className="h-4 w-4 text-indigo-600" /><span className="text-xs">Özet</span>
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -351,11 +379,18 @@ export default function PartnersPage() {
           )}
         </Card>
 
+        </>)}
+
         <p className="text-xs text-slate-400">
           Komisyon, tahsil edilen tutarın KDV hariç kısmı üzerinden hesaplanır. Stopaj, damga vergisi, huzur hakkı vergisi ve SGK oranları
           ortak kartında tanımlıdır ve yaklaşıktır; uygulamadan önce mali müşavirinizle teyit edin.
         </p>
       </div>
+
+      {statementPartner && (
+        <PartnerStatement partner={statementPartner} commissions={commissions} opportunities={opps} invoices={invoices}
+          customers={customers} companyName={companyName} onClose={() => setStatementPartner(null)} />
+      )}
 
       {/* Ödeme */}
       <Modal isOpen={!!payTarget} onClose={() => setPayTarget(null)} title="Komisyon Ödemesi"

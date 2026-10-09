@@ -306,6 +306,16 @@ export default function OpportunitiesPage() {
               disabled={!formData.referral_partner_id}
               onChange={(e) => setFormData({ ...formData, referral_commission_rate: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
           </div>
+          {formData.referral_partner_id && (() => {
+            const pt: any = salesTeam.find((t: any) => t.id === formData.referral_partner_id);
+            const r = formData.referral_commission_rate === '' || formData.referral_commission_rate == null ? Number(pt?.default_commission_rate || 0) : Number(formData.referral_commission_rate);
+            const gross = Number(formData.value || 0) * r / 100;
+            return (
+              <p className="-mt-2 text-xs text-indigo-700">
+                Kazanılır ve tamamı tahsil edilirse ortağa brüt ≈ ₺{formatMoney(gross)} (%{r}) komisyon doğar. Net ve maliyet için: Ortak Komisyonları → Simülasyon.
+              </p>
+            );
+          })()}
           <Textarea label="Notlar" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
         </div>
       </Modal>
