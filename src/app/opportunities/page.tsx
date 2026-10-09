@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createOrderFromOpportunity, WON_STAGES, LOST_STAGES } from '@/lib/sales-flow';
+import BantChecklist, { BantBadge, EMPTY_BANT, normalizeBant, bantSuggestedProbability } from '@/components/BantChecklist';
 
 const STAGES = ['Keşif', 'Teklif', 'Müzakere', 'Kapanış', 'Kazanıldı', 'Kaybedildi'];
 
@@ -52,7 +53,7 @@ export default function OpportunitiesPage() {
   const [editingOpp, setEditingOpp] = useState<Opportunity | null>(null);
   const [formData, setFormData] = useState({
     title: '', customer_id: '', assigned_to: '', value: 0, probability: 50,
-    stage: 'Keşif', expected_close: '', notes: '',
+    stage: 'Keşif', expected_close: '', notes: '', qualification: EMPTY_BANT as any,
     referral_partner_id: '', referral_commission_rate: '' as any,
   });
 
@@ -98,10 +99,11 @@ export default function OpportunitiesPage() {
         value: opp.value || 0, probability: opp.probability || 50, stage: opp.stage || 'Keşif',
         expected_close: opp.expected_close || '', notes: opp.notes || '',
         referral_partner_id: (opp as any).referral_partner_id || '', referral_commission_rate: (opp as any).referral_commission_rate ?? '',
+        qualification: normalizeBant((opp as any).qualification),
       });
     } else {
       setEditingOpp(null);
-      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '', referral_partner_id: '', referral_commission_rate: '' as any, });
+      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '', referral_partner_id: '', referral_commission_rate: '' as any, qualification: EMPTY_BANT as any });
     }
     setModalOpen(true);
   };
@@ -232,6 +234,8 @@ export default function OpportunitiesPage() {
                       {o.customer && <p className="text-xs text-slate-500 flex items-center gap-1"><Building2 className="h-3 w-3" />{o.customer.name}</p>}
                     </div>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1 ${stageColors[o.stage] || 'bg-gray-100 text-gray-700'}`}>{WON_STAGES.includes(o.stage) && <Trophy className="h-3 w-3" />}{o.stage}</span>
+                    </div>
+                    <div className="-mt-2 mb-2 flex justify-end"><BantBadge value={(o as any).qualification} />
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
@@ -316,6 +320,13 @@ export default function OpportunitiesPage() {
               </p>
             );
           })()}
+          <BantChecklist value={normalizeBant(formData.qualification)} onChange={(b) => setFormData({ ...formData, qualification: b })} />
+          {!WON_STAGES.includes(formData.stage) && !LOST_STAGES.includes(formData.stage) && Number(formData.probability) !== bantSuggestedProbability(normalizeBant(formData.qualification)) && (
+            <button type="button" className="-mt-2 text-xs text-indigo-600 hover:underline"
+              onClick={() => setFormData({ ...formData, probability: bantSuggestedProbability(normalizeBant(formData.qualification)) })}>
+              Olasılığı BANT önerisine (%{bantSuggestedProbability(normalizeBant(formData.qualification))}) ayarla
+            </button>
+          )}
           <Textarea label="Notlar" value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} />
         </div>
       </Modal>

@@ -7,6 +7,7 @@ import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import BantChecklist, { Bant, EMPTY_BANT, bantSuggestedProbability } from '@/components/BantChecklist';
 
 interface Lead {
   id: string;
@@ -78,10 +79,12 @@ export default function LeadsPage() {
   const [existingCustomer, setExistingCustomer] = useState<{ id: string; name: string } | null>(null);
   const [oppForm, setOppForm] = useState({ title: '', value: 0, probability: 25, stage: 'Keşif', expected_close: '' });
   const [converting, setConverting] = useState(false);
+  const [bant, setBant] = useState<Bant>(EMPTY_BANT);
 
   const openConvert = async (lead: Lead, withOpp: boolean) => {
     setSelectedLead(lead);
     setConvertWithOpp(withOpp);
+    setBant(EMPTY_BANT);
     setOppForm({
       title: `${lead.company_name} — ${lead.notes ? lead.notes.slice(0, 60) : 'Danışmanlık Hizmeti'}`,
       value: Number(lead.estimated_value) || 0,
@@ -279,6 +282,7 @@ export default function LeadsPage() {
           referral_partner_id: lead.referral_partner_id || null,
           referral_commission_rate: lead.referral_commission_rate ?? null,
           lead_id: lead.id,
+          qualification: bant,
         })]);
         if (error) throw error;
       }
@@ -684,6 +688,7 @@ export default function LeadsPage() {
                   options={['Keşif', 'Teklif', 'Müzakere', 'Kapanış'].map(v => ({ value: v, label: v }))} />
                 <Input label="Tahmini kapanış" type="date" value={oppForm.expected_close} onChange={(e) => setOppForm({ ...oppForm, expected_close: e.target.value })} />
               </div>
+              <BantChecklist value={bant} onChange={(b) => { setBant(b); setOppForm(f => ({ ...f, probability: bantSuggestedProbability(b) })); }} />
             </div>
           )}
 
