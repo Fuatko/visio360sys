@@ -286,8 +286,8 @@ export default function OpportunitiesPage() {
           <div className="grid grid-cols-2 gap-4">
             <Select label="Müşteri" value={formData.customer_id} onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
               options={[{ value: '', label: 'Seçiniz' }, ...customers.map(c => ({ value: c.id, label: c.name }))]} />
-            <Select label="Sorumlu" value={formData.assigned_to} onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-              options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.filter((t: any) => t.member_type !== 'partner').map(s => ({ value: s.id, label: s.name }))]} />
+            <Select label="Sorumlu (temsilci veya iş ortağı)" value={formData.assigned_to} onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
+              options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.map((s: any) => ({ value: s.id, label: s.member_type === 'partner' ? `${s.name} (İş Ortağı)` : s.name }))]} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Değer (₺)" type="number" value={formData.value} onChange={(e) => setFormData({ ...formData, value: Number(e.target.value) })} />
@@ -300,7 +300,7 @@ export default function OpportunitiesPage() {
           </div>
           <div className="grid grid-cols-2 gap-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
             <Select label="Kaynak İş Ortağı" value={formData.referral_partner_id}
-              onChange={(e) => setFormData({ ...formData, referral_partner_id: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, referral_partner_id: e.target.value, assigned_to: formData.assigned_to || e.target.value })}
               options={[{ value: '', label: 'Yok (doğrudan)' }, ...salesTeam.filter((t: any) => t.member_type === 'partner').map((t: any) => ({ value: t.id, label: `${t.name} (%${Number(t.default_commission_rate || 0)})` }))]} />
             <Input label="Özel komisyon % (boşsa ortağın oranı)" type="number" value={formData.referral_commission_rate}
               disabled={!formData.referral_partner_id}
