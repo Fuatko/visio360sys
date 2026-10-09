@@ -3,14 +3,16 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatDate, cleanPayload } from '@/lib/utils';
-import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building2, ArrowRight, Star, TrendingUp } from 'lucide-react';
+import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building2, ArrowRight, Star, TrendingUp, Target } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 interface Lead {
   id: string;
   company_name: string;
   contact_name: string;
+  contact_title?: string;
   contact_email: string;
   contact_phone: string;
   source: string;
@@ -46,6 +48,7 @@ const statusStages = [
   { value: 'qualified', label: 'Nitelikli', color: 'bg-violet-500' },
   { value: 'proposal', label: 'Teklif Aşaması', color: 'bg-amber-500' },
   { value: 'negotiation', label: 'Müzakere', color: 'bg-orange-500' },
+  { value: 'converted', label: 'Müşteriye Dönüştü', color: 'bg-teal-500' },
   { value: 'won', label: 'Kazanıldı', color: 'bg-emerald-500' },
   { value: 'lost', label: 'Kaybedildi', color: 'bg-red-500' },
 ];
@@ -58,6 +61,7 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'info' 
   negotiation: { label: 'Müzakere', variant: 'warning' },
   won: { label: 'Kazanıldı', variant: 'success' },
   lost: { label: 'Kaybedildi', variant: 'danger' },
+  converted: { label: 'Müşteriye Dönüştü', variant: 'success' },
 };
 
 export default function LeadsPage() {
@@ -69,6 +73,30 @@ export default function LeadsPage() {
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const router = useRouter();
+  const [convertWithOpp, setConvertWithOpp] = useState(true);
+  const [existingCustomer, setExistingCustomer] = useState<{ id: string; name: string } | null>(null);
+  const [oppForm, setOppForm] = useState({ title: '', value: 0, probability: 25, stage: 'Keşif', expected_close: '' });
+  const [converting, setConverting] = useState(false);
+
+  const openConvert = async (lead: Lead, withOpp: boolean) => {
+    setSelectedLead(lead);
+    setConvertWithOpp(withOpp);
+    setOppForm({
+      title: `${lead.company_name} — ${lead.notes ? lead.notes.slice(0, 60) : 'Danışmanlık Hizmeti'}`,
+      value: Number(lead.estimated_value) || 0,
+      probability: Math.min(Math.max(Number(lead.score) || 25, 5), 90),
+      stage: 'Keşif',
+      expected_close: '',
+    });
+    // Aynı adla müşteri zaten varsa onu kullan (mükerrer kayıt oluşmasın)
+    const linked = (lead as any).customer_id;
+    const { data } = linked
+      ? await supabase.from('customers').select('id, name').eq('id', linked).limit(1)
+      : await supabase.from('customers').select('id, name').ilike('name', lead.company_name.trim()).limit(1);
+    setExistingCustomer(data && data.length ? data[0] : null);
+    setConvertModalOpen(true);
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -77,6 +105,7 @@ export default function LeadsPage() {
   const [formData, setFormData] = useState({
     company_name: '',
     contact_name: '',
+    contact_title: '',
     contact_email: '',
     contact_phone: '',
     source: 'website',
@@ -124,6 +153,7 @@ export default function LeadsPage() {
       setFormData({
         company_name: lead.company_name || '',
         contact_name: lead.contact_name || '',
+        contact_title: lead.contact_title || '',
         contact_email: lead.contact_email || '',
         contact_phone: lead.contact_phone || '',
         source: lead.source || 'website',
@@ -140,6 +170,7 @@ export default function LeadsPage() {
       setFormData({
         company_name: '',
         contact_name: '',
+        contact_title: '',
         contact_email: '',
         contact_phone: '',
         source: 'website',
@@ -209,32 +240,64 @@ export default function LeadsPage() {
 
   const convertToCustomer = async () => {
     if (!selectedLead) return;
-    
+    if (convertWithOpp && !oppForm.title.trim()) { alert('Fırsat başlığı zorunludur'); return; }
+    setConverting(true);
     try {
-      // Müşteri olarak ekle
-      const { error } = await supabase.from('customers').insert([{
-        name: selectedLead.company_name,
-        contact_person: selectedLead.contact_name,
-        email: selectedLead.contact_email,
-        phone: selectedLead.contact_phone,
-        assigned_to: selectedLead.assigned_to,
-        source: selectedLead.source,
-        status: 'Aktif',
-        referral_partner_id: (selectedLead as any).referral_partner_id || null,
-        referral_commission_rate: (selectedLead as any).referral_commission_rate ?? null,
-      }]);
+      const lead: any = selectedLead;
+      let customerId = existingCustomer?.id || null;
 
-      if (error) throw error;
+      // 1. Müşteri (yoksa oluştur)
+      if (!customerId) {
+        const { data: cust, error } = await supabase.from('customers').insert([cleanPayload({
+          name: lead.company_name,
+          contact_person: lead.contact_name,
+          contact_title: lead.contact_title,
+          email: lead.contact_email,
+          phone: lead.contact_phone,
+          assigned_to: lead.assigned_to || null,
+          source: lead.source,
+          status: 'Aktif',
+          notes: lead.notes,
+          referral_partner_id: lead.referral_partner_id || null,
+          referral_commission_rate: lead.referral_commission_rate ?? null,
+        })]).select('id').single();
+        if (error) throw error;
+        customerId = cust.id;
+      }
 
-      // Lead'i kazanıldı olarak işaretle
-      { const { error: dbErr } = await supabase.from('leads').update(cleanPayload({ status: 'won' })).eq('id', selectedLead.id); if (dbErr) throw dbErr; }
+      // 2. Fırsat (istenirse)
+      if (convertWithOpp) {
+        const { error } = await supabase.from('opportunities').insert([cleanPayload({
+          title: oppForm.title.trim(),
+          customer_id: customerId,
+          assigned_to: lead.assigned_to || null,
+          value: Number(oppForm.value) || 0,
+          probability: Number(oppForm.probability) || 0,
+          stage: oppForm.stage,
+          expected_close: oppForm.expected_close || null,
+          notes: lead.notes,
+          referral_partner_id: lead.referral_partner_id || null,
+          referral_commission_rate: lead.referral_commission_rate ?? null,
+          lead_id: lead.id,
+        })]);
+        if (error) throw error;
+      }
+
+      // 3. Lead'i kapat ve müşteriye bağla
+      { const { error } = await supabase.from('leads').update({ status: 'converted', customer_id: customerId }).eq('id', lead.id); if (error) throw error; }
 
       setConvertModalOpen(false);
       setSelectedLead(null);
       fetchData();
-      alert('Lead başarıyla müşteriye dönüştürüldü!');
+      if (convertWithOpp) {
+        if (confirm('Müşteri ve fırsat oluşturuldu.\n\nFırsatlar sayfasına gitmek ister misiniz?')) router.push('/opportunities');
+      } else {
+        alert(existingCustomer ? 'Lead mevcut müşteriye bağlandı.' : 'Lead müşteriye dönüştürüldü.');
+      }
     } catch (err: any) {
       alert('Hata: ' + err.message);
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -252,7 +315,7 @@ export default function LeadsPage() {
   const totalLeads = leads.length;
   const newLeads = leads.filter(l => l.status === 'new').length;
   const qualifiedLeads = leads.filter(l => ['qualified', 'proposal', 'negotiation'].includes(l.status)).length;
-  const wonLeads = leads.filter(l => l.status === 'won').length;
+  const wonLeads = leads.filter(l => ['won', 'converted'].includes(l.status)).length;
   const conversionRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
 
   // Score rengi
@@ -398,6 +461,7 @@ export default function LeadsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-slate-900">{lead.contact_name || '-'}</p>
+                          {lead.contact_title && <p className="text-xs text-slate-400">{lead.contact_title}</p>}
                           <div className="flex items-center gap-3 mt-1">
                             {lead.contact_email && (
                               <span className="text-xs text-slate-500 flex items-center gap-1">
@@ -426,16 +490,14 @@ export default function LeadsPage() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1">
-                            {!['won', 'lost'].includes(lead.status) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => { setSelectedLead(lead); setConvertModalOpen(true); }}
-                                title="Müşteriye Dönüştür"
-                              >
+                            {!['won', 'lost', 'converted'].includes(lead.status) && (<>
+                              <Button variant="ghost" size="sm" onClick={() => openConvert(lead, true)} title="Fırsata dönüştür (müşteri + fırsat)">
+                                <Target className="h-4 w-4 text-indigo-600" /><span className="text-xs">Fırsat</span>
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => openConvert(lead, false)} title="Sadece müşteriye dönüştür">
                                 <ArrowRight className="h-4 w-4 text-emerald-500" />
                               </Button>
-                            )}
+                            </>)}
                             <Button variant="ghost" size="sm" onClick={() => openModal(lead)}>
                               <Edit2 className="h-4 w-4" />
                             </Button>
@@ -494,6 +556,12 @@ export default function LeadsPage() {
               value={formData.contact_name}
               onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
               placeholder="Ahmet Yılmaz"
+            />
+            <Input
+              label="Unvan / Görev Tanımı"
+              value={formData.contact_title}
+              onChange={(e) => setFormData({ ...formData, contact_title: e.target.value })}
+              placeholder="Genel Müdür, Satın Alma Müdürü..."
             />
             <Input
               label="E-posta"
@@ -573,30 +641,54 @@ export default function LeadsPage() {
         </div>
       </Modal>
 
-      {/* Müşteriye Dönüştür Modal */}
+      {/* Dönüştür Modal */}
       <Modal
         isOpen={convertModalOpen}
         onClose={() => setConvertModalOpen(false)}
-        title="Müşteriye Dönüştür"
+        title={convertWithOpp ? 'Fırsata Dönüştür' : 'Müşteriye Dönüştür'}
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setConvertModalOpen(false)}>İptal</Button>
-            <Button onClick={convertToCustomer}>Dönüştür</Button>
+            <Button onClick={convertToCustomer} disabled={converting}>{converting ? 'İşleniyor...' : convertWithOpp ? 'Müşteri ve Fırsat Oluştur' : 'Dönüştür'}</Button>
           </>
         }
       >
-        <div className="space-y-4">
-          <p className="text-slate-600">
-            <strong>{selectedLead?.company_name}</strong> lead'ini müşteriye dönüştürmek istediğinize emin misiniz?
-          </p>
-          <div className="bg-slate-50 p-4 rounded-lg space-y-2">
-            <p><strong>Firma:</strong> {selectedLead?.company_name}</p>
-            <p><strong>İletişim:</strong> {selectedLead?.contact_name}</p>
-            <p><strong>E-posta:</strong> {selectedLead?.contact_email}</p>
-            <p><strong>Telefon:</strong> {selectedLead?.contact_phone}</p>
+        <div className="space-y-4 text-sm">
+          <div className="rounded-lg bg-slate-50 p-3">
+            <p className="font-medium">{selectedLead?.company_name}</p>
+            <p className="text-slate-500">
+              {selectedLead?.contact_name}{selectedLead?.contact_title ? ` · ${selectedLead.contact_title}` : ''}
+              {selectedLead?.contact_email ? ` · ${selectedLead.contact_email}` : ''}{selectedLead?.contact_phone ? ` · ${selectedLead.contact_phone}` : ''}
+            </p>
           </div>
-          <p className="text-sm text-slate-500">
-            Bu işlem sonucunda lead "Kazanıldı" olarak işaretlenecek ve müşteri listesine eklenecektir.
+
+          <div className={`rounded-lg border p-3 ${existingCustomer ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+            {existingCustomer
+              ? <>Bu adla kayıtlı müşteri var: <strong>{existingCustomer.name}</strong>. Yeni müşteri açılmayacak, lead bu müşteriye bağlanacak.</>
+              : <>Yeni müşteri kaydı oluşturulacak (iletişim kişisi, unvan, kaynak ve iş ortağı bilgileriyle).</>}
+          </div>
+
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={convertWithOpp} onChange={(e) => setConvertWithOpp(e.target.checked)} />
+            <span className="font-medium">Fırsat da oluştur</span>
+          </label>
+
+          {convertWithOpp && (
+            <div className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3">
+              <Input label="Fırsat başlığı *" value={oppForm.title} onChange={(e) => setOppForm({ ...oppForm, title: e.target.value })} />
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Input label="Değer (₺, KDV hariç)" type="number" value={oppForm.value} onChange={(e) => setOppForm({ ...oppForm, value: parseFloat(e.target.value) || 0 })} />
+                <Input label="Olasılık (%)" type="number" value={oppForm.probability} onChange={(e) => setOppForm({ ...oppForm, probability: parseFloat(e.target.value) || 0 })} />
+                <Select label="Aşama" value={oppForm.stage} onChange={(e) => setOppForm({ ...oppForm, stage: e.target.value })}
+                  options={['Keşif', 'Teklif', 'Müzakere', 'Kapanış'].map(v => ({ value: v, label: v }))} />
+                <Input label="Tahmini kapanış" type="date" value={oppForm.expected_close} onChange={(e) => setOppForm({ ...oppForm, expected_close: e.target.value })} />
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-slate-500">
+            Lead "Müşteriye Dönüştü" olarak kapanır ve müşteriye bağlanır; sorumlu ve kaynak iş ortağı bilgileri aktarılır.
           </p>
         </div>
       </Modal>

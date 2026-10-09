@@ -12,6 +12,7 @@ interface Customer {
   id: string;
   name: string;
   contact_person: string;
+  contact_title?: string;
   email: string;
   phone: string;
   address: string;
@@ -42,7 +43,7 @@ export default function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [formData, setFormData] = useState({
-    name: '', contact_person: '', email: '', phone: '', address: '',
+    name: '', contact_person: '', contact_title: '', email: '', phone: '', address: '',
     sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '',
     referral_partner_id: '', referral_commission_rate: '' as any,
   });
@@ -76,7 +77,7 @@ export default function CustomersPage() {
     if (customer) {
       setEditingCustomer(customer);
       setFormData({
-        name: customer.name, contact_person: customer.contact_person || '',
+        name: customer.name, contact_person: customer.contact_person || '', contact_title: customer.contact_title || '',
         email: customer.email || '', phone: customer.phone || '',
         address: customer.address || '', sector: customer.sector || '',
         size: customer.size || '', status: customer.status || 'Potansiyel',
@@ -87,7 +88,7 @@ export default function CustomersPage() {
       });
     } else {
       setEditingCustomer(null);
-      setFormData({ name: '', contact_person: '', email: '', phone: '', address: '',
+      setFormData({ name: '', contact_person: '', contact_title: '', email: '', phone: '', address: '',
         sector: '', size: '', status: 'Potansiyel', assigned_to: '', total_sales: 0, notes: '', referral_partner_id: '', referral_commission_rate: '' as any, });
     }
     setModalOpen(true);
@@ -181,7 +182,7 @@ export default function CustomersPage() {
                     <Badge variant={c.status === 'VIP' ? 'warning' : c.status === 'Aktif' ? 'success' : 'info'}>{c.status}</Badge>
                   </div>
                   <div className="space-y-1 text-sm text-slate-600">
-                    {c.contact_person && <div className="flex items-center gap-2"><User className="h-4 w-4 text-slate-400" />{c.contact_person}</div>}
+                    {c.contact_person && <div className="flex items-center gap-2"><User className="h-4 w-4 text-slate-400" />{c.contact_person}{c.contact_title && <span className="text-xs text-slate-400">· {c.contact_title}</span>}</div>}
                     {c.email && <div className="flex items-center gap-2"><Mail className="h-4 w-4 text-slate-400" />{c.email}</div>}
                     {c.phone && <div className="flex items-center gap-2"><Phone className="h-4 w-4 text-slate-400" />{c.phone}</div>}
                   </div>
@@ -209,7 +210,8 @@ export default function CustomersPage() {
         <div className="space-y-4">
           <Input label="Firma Adı *" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Yetkili" value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} />
+            <Input label="Yetkili Kişi" value={formData.contact_person} onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })} />
+            <Input label="Unvan / Görev Tanımı" value={formData.contact_title} placeholder="Genel Müdür, İK Direktörü..." onChange={(e) => setFormData({ ...formData, contact_title: e.target.value })} />
             <Select label="Durum" value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })}
               options={[{ value: 'Potansiyel', label: 'Potansiyel' }, { value: 'Aktif', label: 'Aktif' }, { value: 'VIP', label: 'VIP' }]} />
           </div>
