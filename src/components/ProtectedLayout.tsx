@@ -8,7 +8,7 @@ import Sidebar from '@/components/Sidebar';
 
 const publicRoutes = ['/login', '/register', '/portal/kayit'];
 // Giriş gerektirmeyen dış sayfalar (müşteriye giden online teklif)
-const isExternal = (p: string) => p.startsWith('/q/') || p.startsWith('/s/');
+const isExternal = (p: string) => p.startsWith('/q/') || p.startsWith('/s/') || p.startsWith('/izin/');
 
 // Bayi portalı kullanıcısı mı? (oturum başına bir kez sorulur)
 let dealerCache: { uid: string; dealer: boolean } | null = null;

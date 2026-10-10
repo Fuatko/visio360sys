@@ -46,6 +46,8 @@ import {
   Gauge,
   HeartPulse,
   Factory,
+  MapPinned,
+  ShieldCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -63,6 +65,7 @@ const mainItems = [
   { href: '/briefs', label: 'Görüşme Hazırlık (AI)', icon: Sparkles },
   { href: '/customer-success', label: 'Müşteri Başarısı', icon: HeartPulse },
   { href: '/crm', label: 'CRM Aktiviteleri', icon: Heart },
+  { href: '/visits', label: 'Saha Ziyaretleri', icon: MapPinned },
 ];
 
 // Satış Döngüsü
@@ -105,6 +108,7 @@ const toolItems = [
   { href: '/views', label: 'Kayıtlı Görünümler', icon: Eye },
   { href: '/swot', label: 'SWOT Analizi', icon: Layers },
   { href: '/competitors', label: 'Rakip Analizi', icon: Swords },
+  { href: '/consents', label: 'İletişim İzinleri (KVKK/İYS)', icon: ShieldCheck },
   { href: '/notifications', label: 'Bildirimler', icon: Bell },
   { href: '/ai', label: 'AI Asistan', icon: Brain },
   { href: '/reports', label: 'Raporlar', icon: FileText },
