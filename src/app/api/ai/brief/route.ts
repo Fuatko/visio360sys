@@ -166,15 +166,19 @@ Sonucu mutlaka save_brief aracını çağırarak ver.`;
   let brief: Json | null = null;
   let diag = '';
   try {
-    const resp = await callClaude(apiKey, {
-      model: MODEL, max_tokens: 12000, system: strategySystem,
-      tools: [briefTool], tool_choice: { type: 'tool', name: 'save_brief' },
-      messages: [{ role: 'user', content: `${context}\n\nARAŞTIRMA NOTLARI:\n${notes || '(web araştırmasında bilgi bulunamadı; genel sektör bilgisine dayan ve bunu güvenilirlik notunda belirt)'}` }],
-    });
-    const tu = (resp.content || []).find((b: any) => b.type === 'tool_use' && b.name === 'save_brief');
-    if (tu?.input && typeof tu.input === 'object') brief = tu.input;
-    else diag = `stop_reason=${resp.stop_reason}`;
-    if (resp.stop_reason === 'max_tokens') diag = 'Çıktı uzunluk sınırına takıldı';
+    // Bazı modeller zorunlu araç seçimini desteklemiyor: "auto" ile istenir, gerekirse bir kez hatırlatılır
+    const msgs: Json[] = [{ role: 'user', content: `${context}\n\nARAŞTIRMA NOTLARI:\n${notes || '(web araştırmasında bilgi bulunamadı; genel sektör bilgisine dayan ve bunu güvenilirlik notunda belirt)'}\n\nŞimdi dosyayı save_brief aracını çağırarak kaydet.` }];
+    for (let attempt = 0; attempt < 2 && !brief; attempt++) {
+      const resp = await callClaude(apiKey, {
+        model: MODEL, max_tokens: 16000, system: strategySystem,
+        tools: [briefTool], tool_choice: { type: 'auto' }, messages: msgs,
+      });
+      const tu = (resp.content || []).find((b: any) => b.type === 'tool_use' && b.name === 'save_brief');
+      if (tu?.input && typeof tu.input === 'object') { brief = tu.input; break; }
+      diag = resp.stop_reason === 'max_tokens' ? 'Çıktı uzunluk sınırına takıldı' : `stop_reason=${resp.stop_reason}`;
+      msgs.push({ role: 'assistant', content: resp.content });
+      msgs.push({ role: 'user', content: 'Sonucu metin olarak değil, mutlaka save_brief aracını çağırarak ver.' });
+    }
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 502 });
   }
