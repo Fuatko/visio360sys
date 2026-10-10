@@ -44,6 +44,7 @@ import {
   Store,
   Sparkles,
   Gauge,
+  HeartPulse,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -59,6 +60,7 @@ const mainItems = [
   { href: '/customers', label: 'Müşteriler', icon: Building2 },
   { href: '/customer-360', label: 'Müşteri 360°', icon: Eye },
   { href: '/briefs', label: 'Görüşme Hazırlık (AI)', icon: Sparkles },
+  { href: '/customer-success', label: 'Müşteri Başarısı', icon: HeartPulse },
   { href: '/crm', label: 'CRM Aktiviteleri', icon: Heart },
 ];
 
