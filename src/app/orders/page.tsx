@@ -3,7 +3,7 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
-import { ShoppingCart, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Truck, CheckCircle, XCircle, Package, Clock, Receipt } from 'lucide-react';
+import { ShoppingCart, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Truck, CheckCircle, XCircle, Package, Clock, Receipt, Factory } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -292,6 +292,32 @@ export default function OrdersPage() {
     }
   };
 
+  // Müşteri siparişindeki ana firma ürünleri için karşı satın alma siparişi
+  const createPurchaseOrders = async (order: any) => {
+    const { data: its, error } = await supabase.from('order_items').select('product_id, quantity').eq('order_id', order.id);
+    if (error) { alert(error.message); return; }
+    const ids = (its || []).map((i: any) => i.product_id).filter(Boolean);
+    const { data: prods, error: pErr } = await supabase.from('products').select('id, name, price, cost_price, tax_rate, supplier_id').in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
+    if (pErr) { alert('Ana firma altyapısı kurulu değil (ana-firmalar.sql).'); return; }
+    const { data: existing } = await supabase.from('purchase_orders').select('id, po_number, supplier_id').eq('sales_order_id', order.id).neq('status', 'cancelled');
+    const groups: Record<string, any[]> = {};
+    (its || []).forEach((i: any) => { const p = (prods || []).find((x: any) => x.id === i.product_id); if (p?.supplier_id) (groups[p.supplier_id] = groups[p.supplier_id] || []).push({ ...i, p }); });
+    const todo = Object.entries(groups).filter(([sid]) => !(existing || []).some((e: any) => e.supplier_id === sid));
+    if (!Object.keys(groups).length) { alert('Bu siparişte ana firmaya bağlı ürün yok. (Ürün Kataloğu\'nda ürünlere "Ana firma" seçin.)'); return; }
+    if (!todo.length) { alert(`Bu sipariş için satın alma zaten açılmış: ${(existing || []).map((e: any) => e.po_number).join(', ')}`); return; }
+    if (!confirm(`${todo.length} ana firmaya satın alma siparişi açılsın mı? (Birim maliyetler ürün kartından gelir.)`)) return;
+    for (const [sid, rows] of todo) {
+      const { data: po, error: poErr } = await supabase.from('purchase_orders').insert([{ supplier_id: sid, sales_order_id: order.id, notes: `${order.order_number} müşteri siparişi için` }]).select().single();
+      if (poErr) { alert(poErr.message); return; }
+      const { error: iErr } = await supabase.from('purchase_order_items').insert(rows.map((r: any) => {
+        const cost = Number(r.p.cost_price) || 0;
+        return { po_id: po.id, product_id: r.product_id, description: r.p.name, quantity: Number(r.quantity) || 0, unit_cost: cost, discount: 0, tax_rate: Number(r.p.tax_rate ?? 20), total: Math.round((Number(r.quantity) || 0) * cost * 100) / 100 };
+      }));
+      if (iErr) { alert(iErr.message); return; }
+    }
+    if (confirm('Satın alma siparişleri oluşturuldu. Ana Firmalarım › Satın alma sayfasına gitmek ister misiniz?')) window.location.href = '/suppliers?tab=purchases';
+  };
+
   const updateStatus = async (id: string, status: string) => {
     try {
       const updateData: any = { status };
@@ -508,6 +534,11 @@ export default function OrdersPage() {
                                   title={invoicedOrderIds.has(order.id) ? 'Faturalandı' : 'Faturala'}>
                                   <Receipt className={`h-4 w-4 ${invoicedOrderIds.has(order.id) ? 'text-slate-400' : 'text-indigo-600'}`} />
                                   {!invoicedOrderIds.has(order.id) && <span className="text-xs">Faturala</span>}
+                                </Button>
+                              )}
+                              {order.status !== 'cancelled' && (
+                                <Button variant="ghost" size="sm" onClick={() => createPurchaseOrders(order)} title="Ana firmaya satın alma siparişi aç">
+                                  <Factory className="h-4 w-4 text-amber-600" />
                                 </Button>
                               )}
                               {['pending', 'confirmed'].includes(order.status) && (

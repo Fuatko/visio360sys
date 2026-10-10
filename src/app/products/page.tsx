@@ -44,6 +44,7 @@ const units = [
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<any[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -61,6 +62,7 @@ export default function ProductsPage() {
     tax_rate: 20,
     status: 'active',
     cost_price: '' as any,
+    supplier_id: '' as any,
   });
 
   const supabase = createClient();
@@ -75,6 +77,8 @@ export default function ProductsPage() {
       
       if (error) throw error;
       setProducts(data || []);
+      const sup = await supabase.from('suppliers').select('id, name, default_discount_pct').order('name');
+      setSuppliers(sup.error ? null : (sup.data || []));
     } catch (err: any) {
       console.error('Veri çekme hatası:', err);
     } finally {
@@ -98,6 +102,7 @@ export default function ProductsPage() {
         tax_rate: product.tax_rate || 20,
         status: product.status || 'active',
         cost_price: (product as any).cost_price ?? '',
+        supplier_id: (product as any).supplier_id ?? '',
       });
     } else {
       setEditingProduct(null);
@@ -112,6 +117,7 @@ export default function ProductsPage() {
         tax_rate: 20,
         status: 'active',
         cost_price: '' as any,
+        supplier_id: '' as any,
       });
     }
     setModalOpen(true);
@@ -125,7 +131,8 @@ export default function ProductsPage() {
 
     setSaving(true);
     try {
-      const { cost_price, ...rest } = formData as any;
+      const { cost_price, supplier_id, ...rest0 } = formData as any;
+      const rest: any = suppliers ? { ...rest0, supplier_id: supplier_id || null } : rest0;
       // Maliyet alanı (teklif-onay.sql) kurulu değilse dokunma
       const payload: any = (cost_price !== '' && cost_price !== null) || (editingProduct as any)?.cost_price != null
         ? { ...rest, cost_price: cost_price === '' ? null : Number(cost_price) } : rest;
@@ -419,6 +426,15 @@ export default function ProductsPage() {
             />
           </div>
 
+          {suppliers && (
+            <Select label="Ana firma (bayisi olduğumuz marka) — kendi ürünümüzse boş bırakın" value={(formData as any).supplier_id}
+              onChange={(e) => {
+                const sp = suppliers.find(x => x.id === e.target.value);
+                const auto = sp?.default_discount_pct && (formData as any).cost_price === '' && formData.price ? String(Math.round(Number(formData.price) * (1 - Number(sp.default_discount_pct) / 100) * 100) / 100) : (formData as any).cost_price;
+                setFormData({ ...formData, supplier_id: e.target.value, cost_price: auto } as any);
+              }}
+              options={[{ value: '', label: 'Kendi ürünümüz / hizmetimiz' }, ...suppliers.map(sp => ({ value: sp.id, label: sp.name }))]} />
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Input label="Birim maliyet (KDV hariç, iç kullanım)" type="number" value={(formData as any).cost_price}
               onChange={(e) => setFormData({ ...formData, cost_price: e.target.value } as any)} />

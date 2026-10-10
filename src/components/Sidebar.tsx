@@ -45,6 +45,7 @@ import {
   Sparkles,
   Gauge,
   HeartPulse,
+  Factory,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -75,6 +76,8 @@ const salesItems = [
   { href: '/contracts', label: 'Sözleşmeler', icon: ScrollText },
   { href: '/collections', label: 'Tahsilat', icon: Wallet },
   { href: '/dealers', label: 'Bayi Yönetimi', icon: Store },
+  { href: '/suppliers', label: 'Ana Firmalarım', icon: Factory },
+  { href: '/profitability', label: 'Kârlılık (Net Kâr)', icon: Calculator },
 ];
 
 // Planlama & Analiz

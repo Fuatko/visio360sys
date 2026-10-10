@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createOrderFromOpportunity, WON_STAGES, LOST_STAGES } from '@/lib/sales-flow';
+import { SALES_MODELS, REG_STATUS } from '@/lib/suppliers';
 import { FORECAST_CATEGORIES, LOSS_REASONS, WIN_REASONS, fcLabel, staleSignals } from '@/lib/pipeline';
 import BantChecklist, { BantBadge, EMPTY_BANT, normalizeBant, bantSuggestedProbability } from '@/components/BantChecklist';
 
@@ -57,7 +58,9 @@ export default function OpportunitiesPage() {
     stage: 'Keşif', expected_close: '', notes: '', qualification: EMPTY_BANT as any,
     referral_partner_id: '', referral_commission_rate: '' as any,
     forecast_category: 'pipeline', close_reason: '', close_competitor_id: '', close_note: '',
+    sales_model: 'own', supplier_id: '', supplier_reg_no: '', supplier_reg_status: '', supplier_reg_until: '', expected_commission: '' as any,
   });
+  const [suppliers, setSuppliers] = useState<any[] | null>(null);   // null = ana-firmalar.sql kurulu değil
   const [discipline, setDiscipline] = useState(false);   // satis-zekasi.sql kurulu mu
   const [competitors, setCompetitors] = useState<{ id: string; name: string }[]>([]);
   const [lastActivity, setLastActivity] = useState<Record<string, string>>({});
@@ -74,6 +77,8 @@ export default function OpportunitiesPage() {
         supabase.from('crm_activities').select('customer_id, activity_date').order('activity_date', { ascending: false }).limit(2000),
       ]);
       setDiscipline(!probe.error);
+      const sup = await supabase.from('suppliers').select('id, name, model, deal_reg_required, deal_reg_protection_days, commission_rate').eq('is_active', true).order('name');
+      setSuppliers(sup.error ? null : (sup.data || []));
       setCompetitors(compRes.data || []);
       const la: Record<string, string> = {};
       (actRes.data || []).forEach((a: any) => { if (a.customer_id && !la[a.customer_id]) la[a.customer_id] = a.activity_date; });
@@ -118,10 +123,12 @@ export default function OpportunitiesPage() {
         qualification: normalizeBant((opp as any).qualification),
         forecast_category: (opp as any).forecast_category || 'pipeline', close_reason: (opp as any).close_reason || '',
         close_competitor_id: (opp as any).close_competitor_id || '', close_note: (opp as any).close_note || '',
+        sales_model: (opp as any).sales_model || 'own', supplier_id: (opp as any).supplier_id || '', supplier_reg_no: (opp as any).supplier_reg_no || '',
+        supplier_reg_status: (opp as any).supplier_reg_status || '', supplier_reg_until: (opp as any).supplier_reg_until || '', expected_commission: (opp as any).expected_commission ?? '',
       });
     } else {
       setEditingOpp(null);
-      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '', referral_partner_id: '', referral_commission_rate: '' as any, qualification: EMPTY_BANT as any, forecast_category: 'pipeline', close_reason: '', close_competitor_id: '', close_note: '' });
+      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '', referral_partner_id: '', referral_commission_rate: '' as any, qualification: EMPTY_BANT as any, forecast_category: 'pipeline', close_reason: '', close_competitor_id: '', close_note: '', sales_model: 'own', supplier_id: '', supplier_reg_no: '', supplier_reg_status: '', supplier_reg_until: '', expected_commission: '' as any });
     }
     setModalOpen(true);
   };
@@ -150,12 +157,21 @@ export default function OpportunitiesPage() {
         alert(isLost ? 'Kaybedildi olarak kapatırken kayıp nedenini seçin (kazanma/kaybetme analizi için).' : 'Kazanıldı olarak kapatırken kazanma nedenini seçin.');
         setSaving(false); return;
       }
-      const { forecast_category, close_reason, close_competitor_id, close_note, ...base } = formData;
+      const { forecast_category, close_reason, close_competitor_id, close_note, sales_model, supplier_id, supplier_reg_no, supplier_reg_status, supplier_reg_until, expected_commission, ...base } = formData as any;
       const dataToSave: any = {
         ...base,
         customer_id: formData.customer_id || null,
         assigned_to: formData.assigned_to || null,
       };
+      if (suppliers) {
+        const own = sales_model === 'own';
+        Object.assign(dataToSave, { sales_model, supplier_id: own ? null : supplier_id || null, supplier_reg_no: own ? null : supplier_reg_no || null,
+          supplier_reg_status: own ? null : supplier_reg_status || null, supplier_reg_until: own ? null : supplier_reg_until || null,
+          expected_commission: sales_model === 'agent' && expected_commission !== '' ? Number(expected_commission) : null });
+        const sp = suppliers.find(x => x.id === supplier_id);
+        if (!own && sp?.deal_reg_required && supplier_reg_status !== 'approved' && !isLost &&
+            !confirm(`${sp.name} bu ürünlerde teklif öncesi fırsat kaydı istiyor ve kayıt onaylı görünmüyor.\n\nYine de kaydedilsin mi?`)) { setSaving(false); return; }
+      }
       if (discipline) {
         Object.assign(dataToSave, { forecast_category, close_reason: (isWon || isLost) ? close_reason || null : null,
           close_competitor_id: (isWon || isLost) ? close_competitor_id || null : null, close_note: (isWon || isLost) ? close_note || null : null });
@@ -178,7 +194,15 @@ export default function OpportunitiesPage() {
       setModalOpen(false);
       await fetchData();
       const justWon = isWon && !(editingOpp && WON_STAGES.includes(editingOpp.stage));
-      if (justWon && saved) await offerOrder(saved);
+      if (justWon && saved && (saved as any).sales_model === 'agent' && (saved as any).supplier_id) {
+        const sp = suppliers?.find(x => x.id === (saved as any).supplier_id);
+        const amt = Number((saved as any).expected_commission) || Number(saved.value || 0) * Number(sp?.commission_rate || 0) / 100;
+        if (confirm(`Aracılık satışı kazanıldı. ${sp?.name || 'Ana firma'} için ₺${formatMoney(amt)} komisyon alacağı oluşturulsun mu?`)) {
+          const { error: rErr } = await supabase.from('supplier_receivables').insert([{ supplier_id: (saved as any).supplier_id, kind: 'commission', opportunity_id: saved.id,
+            customer_id: saved.customer_id, description: `Komisyon: ${saved.title}`, reference: (saved as any).supplier_reg_no || null, amount: Math.round(amt * 100) / 100, status: 'expected' }]);
+          if (rErr) alert('Alacak oluşturulamadı: ' + rErr.message);
+        }
+      } else if (justWon && saved) await offerOrder(saved);
     } catch (err: any) {
       alert('Hata: ' + err.message);
     } finally {
@@ -291,6 +315,17 @@ export default function OpportunitiesPage() {
                     {discipline && staleSignals(o, o.customer_id ? (lastActivity[o.customer_id] ?? null) : undefined).map(sg => (
                       <p key={sg} className="rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">⚠ {sg}</p>
                     ))}
+                    {(o as any).supplier_id && suppliers && (() => {
+                      const sp = suppliers.find(x => x.id === (o as any).supplier_id);
+                      const open = !WON_STAGES.includes(o.stage) && !LOST_STAGES.includes(o.stage);
+                      const st = (o as any).supplier_reg_status;
+                      return (
+                        <p className="text-[11px] text-slate-500">{sp?.name} · {SALES_MODELS[(o as any).sales_model] || ''}
+                          {open && sp?.deal_reg_required && st !== 'approved' && <span className="ml-1 rounded bg-red-50 px-1 text-red-700">⚠ ana firmaya kayıt {st ? REG_STATUS[st]?.label.toLowerCase() : 'yok'}</span>}
+                          {open && st === 'approved' && (o as any).supplier_reg_until && <span className="ml-1 text-green-700">· koruma {new Date((o as any).supplier_reg_until).toLocaleDateString('tr-TR')}</span>}
+                        </p>
+                      );
+                    })()}
                     {(o as any).close_reason && <p className="text-[11px] text-slate-500">{LOST_STAGES.includes(o.stage) ? 'Kayıp' : 'Kazanma'} nedeni: {(o as any).close_reason}{(o as any).close_competitor_id ? ` · ${competitors.find(c => c.id === (o as any).close_competitor_id)?.name || ''}` : ''}</p>}
                   </div>
                   <div className="mt-3 flex items-center justify-end gap-1 border-t pt-3">
@@ -335,6 +370,38 @@ export default function OpportunitiesPage() {
               options={STAGES.map(st => ({ value: st, label: st === 'Kazanıldı' ? 'Kazanıldı ✓' : st === 'Kaybedildi' ? 'Kaybedildi ✗' : st }))} />
             <Input label="Tahmini Kapanış" type="date" value={formData.expected_close} onChange={(e) => setFormData({ ...formData, expected_close: e.target.value })} />
           </div>
+          {suppliers && (
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <div className="grid grid-cols-2 gap-4">
+                <Select label="Satış modeli" value={(formData as any).sales_model} onChange={(e) => setFormData({ ...formData, sales_model: e.target.value } as any)}
+                  options={Object.entries(SALES_MODELS).map(([value, label]) => ({ value, label }))} />
+                {(formData as any).sales_model !== 'own' && (
+                  <Select label="Ana firma" value={(formData as any).supplier_id} onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value } as any)}
+                    options={[{ value: '', label: suppliers.length ? 'Seçiniz' : 'Önce Ana Firmalarım sayfasından ekleyin' }, ...suppliers.map(sp => ({ value: sp.id, label: sp.name }))]} />
+                )}
+              </div>
+              {(formData as any).sales_model !== 'own' && (formData as any).supplier_id && (() => {
+                const sp = suppliers.find(x => x.id === (formData as any).supplier_id);
+                return (
+                  <>
+                    <div className="grid grid-cols-3 gap-3">
+                      <Input label={`Ana firma fırsat kayıt no${sp?.deal_reg_required ? ' *' : ''}`} value={(formData as any).supplier_reg_no} onChange={(e) => setFormData({ ...formData, supplier_reg_no: e.target.value } as any)} />
+                      <Select label="Kayıt durumu" value={(formData as any).supplier_reg_status} onChange={(e) => setFormData({ ...formData, supplier_reg_status: e.target.value } as any)}
+                        options={[{ value: '', label: 'Kaydedilmedi' }, ...Object.entries(REG_STATUS).map(([value, v]) => ({ value, label: v.label }))]} />
+                      <Input label="Koruma bitişi" type="date" value={(formData as any).supplier_reg_until} onChange={(e) => setFormData({ ...formData, supplier_reg_until: e.target.value } as any)} />
+                    </div>
+                    {(formData as any).sales_model === 'agent' && (
+                      <Input label={`Beklenen komisyon (₺) — boşsa %${Number(sp?.commission_rate || 0)} ile hesaplanır`} type="number" value={(formData as any).expected_commission}
+                        onChange={(e) => setFormData({ ...formData, expected_commission: e.target.value } as any)} />
+                    )}
+                    {sp?.deal_reg_required && (formData as any).supplier_reg_status !== 'approved' && (
+                      <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">{sp.name} teklif öncesi fırsat kaydı istiyor. Kaydı ana firma portalından yapıp numarasını buraya girin; onaylanmadan teklif vermek kanal çatışmasına yol açabilir.</p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
           {discipline && !WON_STAGES.includes(formData.stage) && !LOST_STAGES.includes(formData.stage) && (
             <div>
               <Select label="Tahmin kategorisi (bu dönem kapanır mı?)" value={formData.forecast_category} onChange={(e) => setFormData({ ...formData, forecast_category: e.target.value })}
