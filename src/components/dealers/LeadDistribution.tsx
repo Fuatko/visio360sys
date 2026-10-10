@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/portal/common';
 import { formatMoney, formatDateTime } from '@/lib/utils';
 import { LEAD_STATUS, n } from '@/lib/portal';
 import { Send, Clock } from 'lucide-react';
+import { CitySelect } from '@/components/TrSelects';
 
 interface Props { supabase: any; dealers: any[] }
 const tl = (v: number) => `₺${formatMoney(v)}`;
@@ -110,7 +111,7 @@ export default function LeadDistribution({ supabase, dealers }: Props) {
             <Select label="Potansiyel müşterilerden seç (isteğe bağlı)" value={form.lead_id} onChange={e => pickLead(e.target.value)} options={[{ value: '', label: 'Elle gir' }, ...leads.map(l => ({ value: l.id, label: l.company_name }))]} />
             <div className="grid grid-cols-2 gap-3">
               <Input label="Firma" value={form.company_name} onChange={e => setForm({ ...form, company_name: e.target.value })} />
-              <Input label="Şehir" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
+              <CitySelect value={form.city} onChange={v => setForm({ ...form, city: v })} />
               <Input label="Yetkili" value={form.contact_name} onChange={e => setForm({ ...form, contact_name: e.target.value })} />
               <Input label="Telefon" value={form.contact_phone} onChange={e => setForm({ ...form, contact_phone: e.target.value })} />
               <Input label="E-posta" value={form.contact_email} onChange={e => setForm({ ...form, contact_email: e.target.value })} />

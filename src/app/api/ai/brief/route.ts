@@ -11,23 +11,6 @@ const DAILY_LIMIT = Number(process.env.AI_DAILY_LIMIT || 40);
 
 type Json = Record<string, any>;
 
-const SCHEMA = `{
-  "company_overview": "3-5 cümle: ne yapar, hangi pazarlarda, ölçeği",
-  "key_facts": [{"label": "Kuruluş / Ciro / Çalışan / Merkez / Ortaklık yapısı ...", "value": "..."}],
-  "recent_news": [{"title": "...", "date": "YYYY-MM veya bilinmiyor", "summary": "1 cümle", "url": "..."}],
-  "swot": {"strengths": ["..."], "weaknesses": ["..."], "opportunities": ["..."], "threats": ["..."]},
-  "likely_pain_points": [{"pain": "...", "evidence": "neden böyle düşünüyoruz"}],
-  "decision_makers": [{"name": "...", "title": "...", "note": "yaklaşım önerisi"}],
-  "meeting_strategy": {"objective": "bu görüşmenin gerçekçi hedefi", "opening": "ilk 60 saniyede söylenecek açılış", "agenda": ["..."], "tone": "üslup önerisi"},
-  "discovery_questions": [{"question": "...", "why": "bu soru neyi ortaya çıkarır"}],
-  "objections": [{"objection": "müşterinin muhtemel itirazı", "response": "önerilen cevap"}],
-  "our_fit": [{"product": "bizim ürün/hizmetimizin adı", "pitch": "bu müşteriye nasıl konumlanır"}],
-  "competitive_angle": "rakiplerimize karşı nasıl ayrışırız",
-  "red_flags": ["dikkat edilmesi gereken riskler"],
-  "next_steps": ["görüşme sonrası önerilen adımlar"],
-  "confidence_note": "hangi bilgiler kaynakla doğrulandı, hangileri tahmin"
-}`;
-
 async function callClaude(apiKey: string, body: Json) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -37,12 +20,6 @@ async function callClaude(apiKey: string, body: Json) {
   const j = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(j?.error?.message || `Yapay zekâ servisi hatası (${res.status})`);
   return j;
-}
-
-function extractJson(text: string): Json | null {
-  const tagged = text.match(/<brief_json>([\s\S]*?)<\/brief_json>/);
-  const raw = tagged ? tagged[1] : (text.match(/```json\s*([\s\S]*?)```/)?.[1] ?? text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
-  try { return JSON.parse(raw.trim()); } catch { return null; }
 }
 
 export async function POST(request: Request) {
@@ -100,21 +77,7 @@ export async function POST(request: Request) {
     rakiplerimiz: competitors.data || [],
   };
 
-  const system = `Sen deneyimli bir B2B satış stratejisti ve kurumsal araştırma analistisin. Türkçe yazarsın.
-Görevin: satış temsilcisinin bir firmayla yapacağı görüşmeye hazırlık dosyası hazırlamak.
-Kurallar:
-- Önce web aramasıyla firmayı araştır: resmi web sitesi, faaliyet alanı, ürünler, ölçek (ciro, çalışan), son 12-18 ay haberleri, yatırımlar, ihracat, yöneticiler, KAP/Borsa İstanbul açıklamaları (halka açıksa), sektör dinamikleri.
-- Bulamadığın bilgiyi UYDURMA. Rakamları sadece kaynakta görürsen yaz; tahminse "tahmini" de. Kişi isimlerini sadece kaynakta görürsen ver.
-- Kişisel/özel hayata ilişkin bilgi toplama; yalnızca iş bağlamında kamuya açık bilgileri kullan.
-- SWOT'u müşterinin kendi işi açısından yap (bizim açımızdan değil).
-- Sorular açık uçlu, keşif odaklı olsun (durum, sorun, etki, karar süreci, bütçe, zamanlama).
-- İtiraz cevapları bizim ürün ve değer önerimize dayansın; abartılı vaat verme, fiyat uydurma.
-- Bizim ürünlerimizden bu müşteriye gerçekten uyanları seç; uymuyorsa açıkça söyle.
-- Çıktının sonunda yalnızca <brief_json>...</brief_json> etiketleri arasında, aşağıdaki şemaya uyan geçerli JSON ver. JSON dışında açıklama gerekmez.
-Şema:
-${SCHEMA}`;
-
-  const userMsg = `Hazırlık dosyası istenen firma:
+  const context = `Hazırlık dosyası istenen firma:
 ${JSON.stringify({
     firma: company, web_sitesi: input.website || null, sektor: input.sector || null, ciro: input.revenue || null, calisan: input.employees || null,
     sehir: input.city || null, gorusulecek_kisi: input.contact_name || null, kisinin_unvani: input.contact_title || null,
@@ -127,18 +90,29 @@ ${JSON.stringify(crm, null, 2)}
 Bizim şirketimiz:
 ${JSON.stringify(ourContext, null, 2)}`;
 
-  const messages: Json[] = [{ role: 'user', content: userMsg }];
+  const rules = `Kurallar:
+- Bulamadığın bilgiyi UYDURMA. Rakamları sadece kaynakta görürsen yaz; tahminse "tahmini" de. Kişi isimlerini sadece kaynakta görürsen ver.
+- Yalnızca iş bağlamında kamuya açık bilgileri kullan; kişisel/özel hayat bilgisi toplama.
+- Türkçe yaz.`;
+
+  // ---- 1. Aşama: web araştırması (serbest metin notlar) ----
+  const researchSystem = `Sen kurumsal araştırma analistisin. Bir satış görüşmesi öncesi firmayı web'de araştırıp olgu notları çıkarırsın.
+Araştır: resmi web sitesi, faaliyet alanı ve ürünler, ölçek (ciro, çalışan, tesis), ortaklık yapısı, son 12-18 ay haberleri, yatırımlar, ihracat pazarları,
+yöneticiler, KAP/Borsa İstanbul açıklamaları (halka açıksa), sektör dinamikleri ve rakipleri.
+Çıktın: madde madde, kaynak URL'leriyle birlikte olgu notları ve sektörel bağlam. Satış önerisi yazma, sadece bul ve not et.
+${rules}`;
+  const messages: Json[] = [{ role: 'user', content: context + '\n\nBu firmayı araştır ve olgu notlarını çıkar.' }];
   const tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: Number(process.env.AI_MAX_SEARCHES || 6),
     user_location: { type: 'approximate', country: 'TR', timezone: 'Europe/Istanbul' } }];
 
   const sources = new Map<string, string>();
-  let text = '';
+  let notes = '';
   try {
     for (let turn = 0; turn < 4; turn++) {
-      const resp = await callClaude(apiKey, { model: MODEL, max_tokens: 12000, system, tools, messages });
+      const resp = await callClaude(apiKey, { model: MODEL, max_tokens: 6000, system: researchSystem, tools, messages });
       for (const b of resp.content || []) {
         if (b.type === 'text') {
-          text += b.text;
+          notes += b.text;
           (b.citations || []).forEach((c: any) => c.url && sources.set(c.url, c.title || c.url));
         }
         if (b.type === 'web_search_tool_result' && Array.isArray(b.content)) {
@@ -152,16 +126,69 @@ ${JSON.stringify(ourContext, null, 2)}`;
     return NextResponse.json({ error: e.message }, { status: 502 });
   }
 
-  const brief = extractJson(text);
+  // ---- 2. Aşama: yapılandırılmış hazırlık dosyası (araç çağrısıyla garanti JSON) ----
+  const strategySystem = `Sen deneyimli bir B2B satış stratejistisin. Araştırma notlarını ve bizim şirket bilgimizi kullanarak satış temsilcisi için görüşme hazırlık dosyası hazırlarsın.
+- SWOT'u müşterinin kendi işi açısından yap (bizim açımızdan değil).
+- Sorular açık uçlu ve keşif odaklı olsun (mevcut durum, sorun, etkisi, karar süreci, bütçe, zamanlama).
+- İtiraz cevapları bizim ürün ve değer önerimize dayansın; abartılı vaat verme, fiyat uydurma.
+- Ürünlerimizden bu müşteriye gerçekten uyanları seç; uymuyorsa açıkça söyle.
+- Haberlerde ve olgularda sadece araştırma notlarındaki bilgileri kullan; URL'leri notlardan al.
+${rules}
+Sonucu mutlaka save_brief aracını çağırarak ver.`;
+  const str = { type: 'string' };
+  const strArr = { type: 'array', items: str };
+  const obj = (props: Record<string, any>) => ({ type: 'object', properties: props });
+  const briefTool = {
+    name: 'save_brief',
+    description: 'Görüşme hazırlık dosyasını kaydeder.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        company_overview: str,
+        key_facts: { type: 'array', items: obj({ label: str, value: str }) },
+        recent_news: { type: 'array', items: obj({ title: str, date: str, summary: str, url: str }) },
+        swot: obj({ strengths: strArr, weaknesses: strArr, opportunities: strArr, threats: strArr }),
+        likely_pain_points: { type: 'array', items: obj({ pain: str, evidence: str }) },
+        decision_makers: { type: 'array', items: obj({ name: str, title: str, note: str }) },
+        meeting_strategy: obj({ objective: str, opening: str, agenda: strArr, tone: str }),
+        discovery_questions: { type: 'array', items: obj({ question: str, why: str }) },
+        objections: { type: 'array', items: obj({ objection: str, response: str }) },
+        our_fit: { type: 'array', items: obj({ product: str, pitch: str }) },
+        competitive_angle: str,
+        red_flags: strArr,
+        next_steps: strArr,
+        confidence_note: str,
+      },
+      required: ['company_overview', 'swot', 'meeting_strategy', 'discovery_questions', 'objections', 'our_fit', 'confidence_note'],
+    },
+  };
+
+  let brief: Json | null = null;
+  let diag = '';
+  try {
+    const resp = await callClaude(apiKey, {
+      model: MODEL, max_tokens: 12000, system: strategySystem,
+      tools: [briefTool], tool_choice: { type: 'tool', name: 'save_brief' },
+      messages: [{ role: 'user', content: `${context}\n\nARAŞTIRMA NOTLARI:\n${notes || '(web araştırmasında bilgi bulunamadı; genel sektör bilgisine dayan ve bunu güvenilirlik notunda belirt)'}` }],
+    });
+    const tu = (resp.content || []).find((b: any) => b.type === 'tool_use' && b.name === 'save_brief');
+    if (tu?.input && typeof tu.input === 'object') brief = tu.input;
+    else diag = `stop_reason=${resp.stop_reason}`;
+    if (resp.stop_reason === 'max_tokens') diag = 'Çıktı uzunluk sınırına takıldı';
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 502 });
+  }
+  if (brief && !brief.company_overview && !brief.swot) { diag = diag || 'Boş çıktı'; brief = null; }
+
   const srcList = Array.from(sources.entries()).slice(0, 25).map(([u, t]) => ({ url: u, title: t }));
   const row = {
     company_name: company, website: input.website || null, customer_id: input.customer_id || null, lead_id: input.lead_id || null,
     opportunity_id: input.opportunity_id || null, meeting_date: input.meeting_date || null,
     inputs: input, brief, sources: srcList, model: MODEL,
-    status: brief ? 'ready' : 'failed', error: brief ? null : 'Yapay zekâ çıktısı okunamadı',
+    status: brief ? 'ready' : 'failed', error: brief ? null : `Yapay zekâ çıktısı okunamadı (${diag})`,
   };
   const { data: saved, error } = await db.from('account_briefs').insert([row]).select().single();
   if (error) return NextResponse.json({ error: 'Kaydedilemedi: ' + error.message, brief }, { status: 500 });
-  if (!brief) return NextResponse.json({ error: 'Yapay zekâ çıktısı okunamadı, lütfen tekrar deneyin.', id: saved.id }, { status: 502 });
+  if (!brief) return NextResponse.json({ error: `Yapay zekâ çıktısı okunamadı (${diag}), lütfen tekrar deneyin.`, id: saved.id }, { status: 502 });
   return NextResponse.json({ id: saved.id });
 }

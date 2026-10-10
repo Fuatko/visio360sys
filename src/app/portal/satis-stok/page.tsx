@@ -8,6 +8,7 @@ import { formatMoney, formatDate } from '@/lib/utils';
 import { n, todayStr } from '@/lib/portal';
 import { periodLabel } from '@/lib/periods';
 import { Plus, Trash2, Save, ClipboardPaste } from 'lucide-react';
+import { CitySelect } from '@/components/TrSelects';
 
 type Tab = 'sellout' | 'stock' | 'forecast';
 const tl = (v: number) => `₺${formatMoney(v)}`;
@@ -203,7 +204,7 @@ export default function PortalSellout() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Input label="Son kullanıcı" value={form.end_customer_name} onChange={e => setForm({ ...form, end_customer_name: e.target.value })} />
-              <Input label="Şehir" value={form.end_customer_city} onChange={e => setForm({ ...form, end_customer_city: e.target.value })} />
+              <CitySelect value={form.end_customer_city} onChange={v => setForm({ ...form, end_customer_city: v })} />
             </div>
             <Textarea label="Seri numaraları (garanti takibi için, virgülle)" value={form.serial_numbers} onChange={e => setForm({ ...form, serial_numbers: e.target.value })} />
           </div>

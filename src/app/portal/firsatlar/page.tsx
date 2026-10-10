@@ -7,6 +7,7 @@ import { Modal, Button, Input, Textarea } from '@/components/ui';
 import { formatMoney, formatDate } from '@/lib/utils';
 import { DEAL_STATUS, n, todayStr } from '@/lib/portal';
 import { Plus, ShieldCheck, Info } from 'lucide-react';
+import { CitySelect } from '@/components/TrSelects';
 
 const tl = (v: number) => `₺${formatMoney(v)}`;
 const EMPTY = { end_customer_name: '', end_customer_tax_no: '', end_customer_city: '', contact_name: '', contact_phone: '', contact_email: '',
@@ -84,7 +85,7 @@ export default function PortalDeals() {
         {form && (
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase text-slate-400">Son kullanıcı</p>
-            <div className="grid gap-3 sm:grid-cols-3">{f('end_customer_name', 'Firma adı *')}{f('end_customer_tax_no', 'Vergi no')}{f('end_customer_city', 'Şehir')}</div>
+            <div className="grid gap-3 sm:grid-cols-3">{f('end_customer_name', 'Firma adı *')}{f('end_customer_tax_no', 'Vergi no')}<CitySelect value={form.end_customer_city} onChange={v => setForm({ ...form, end_customer_city: v })} /></div>
             <div className="grid gap-3 sm:grid-cols-3">{f('contact_name', 'Yetkili')}{f('contact_phone', 'Telefon')}{f('contact_email', 'E-posta', 'email')}</div>
             <p className="text-xs font-semibold uppercase text-slate-400">Proje</p>
             {f('project_name', 'Proje adı *')}

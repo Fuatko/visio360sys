@@ -8,6 +8,7 @@ import { Building2, Plus, Edit2, Trash2, Mail, Phone, User, RefreshCw, Search, S
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { DEALER_LEVELS, PAYMENT_TERMS, termLabel } from '@/lib/dealer-pricing';
+import { SectorSelect } from '@/components/TrSelects';
 
 interface Customer {
   id: string;
@@ -255,8 +256,7 @@ export default function CustomersPage() {
             <Input label="Telefon" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Sektör" value={formData.sector} onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
-              options={[{ value: '', label: 'Seçiniz' }, { value: 'Teknoloji', label: 'Teknoloji' }, { value: 'Üretim', label: 'Üretim' }, { value: 'Perakende', label: 'Perakende' }, { value: 'Finans', label: 'Finans' }, { value: 'Holding', label: 'Holding' }, { value: 'Savunma', label: 'Savunma' }, { value: 'Telekom', label: 'Telekom' }, { value: 'Otomotiv', label: 'Otomotiv' }, { value: 'Turizm', label: 'Turizm' }, { value: 'Gıda', label: 'Gıda' }, { value: 'Eğitim', label: 'Eğitim' }]} />
+            <SectorSelect value={formData.sector} onChange={(v) => setFormData({ ...formData, sector: v })} />
             <Select label="Sorumlu (temsilci veya iş ortağı)" value={formData.assigned_to} onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
               options={[{ value: '', label: 'Seçiniz' }, ...salesTeam.map((s: any) => ({ value: s.id, label: s.member_type === 'partner' ? `${s.name} (İş Ortağı)` : s.name }))]} />
           </div>

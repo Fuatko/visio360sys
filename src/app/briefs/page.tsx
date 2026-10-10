@@ -8,6 +8,7 @@ import { printHtml } from '@/lib/print';
 import { createClient } from '@/lib/supabase';
 import { useEffect, useState } from 'react';
 import { Sparkles, Plus, Printer, Settings2, Search, Trash2, Star, Loader2, AlertTriangle } from 'lucide-react';
+import { CitySelect, SectorSelect } from '@/components/TrSelects';
 
 const EMPTY = { company_name: '', website: '', sector: '', city: '', revenue: '', employees: '', contact_name: '', contact_title: '', meeting_goal: '', meeting_date: '', notes: '',
   customer_id: '', lead_id: '', opportunity_id: '' };
@@ -184,8 +185,8 @@ export default function BriefsPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <Input label="Firma adı *" value={form.company_name} onChange={e => setForm({ ...form, company_name: e.target.value })} />
               <Input label="Web sitesi" placeholder="ornek.com.tr" value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} />
-              <Input label="Sektör" value={form.sector} onChange={e => setForm({ ...form, sector: e.target.value })} />
-              <Input label="Şehir" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
+              <SectorSelect value={form.sector} onChange={v => setForm({ ...form, sector: v })} />
+              <CitySelect value={form.city} onChange={v => setForm({ ...form, city: v })} />
               <Input label="Ciro (biliniyorsa)" placeholder="ör. 500 M TL" value={form.revenue} onChange={e => setForm({ ...form, revenue: e.target.value })} />
               <Input label="Çalışan sayısı" value={form.employees} onChange={e => setForm({ ...form, employees: e.target.value })} />
               <Input label="Görüşülecek kişi" value={form.contact_name} onChange={e => setForm({ ...form, contact_name: e.target.value })} />
