@@ -11,6 +11,7 @@ import { createInvoiceFromOrder } from '@/lib/invoicing';
 import { nextDocumentNumber } from '@/lib/doc-number';
 import { useDealerPricing } from '@/lib/use-dealer-pricing';
 import DealerTermBar from '@/components/DealerTermBar';
+import { CURRENCIES, CUR_LABEL, money, getRates, convert, toTry, FxRates } from '@/lib/fx';
 
 interface Order {
   id: string;
@@ -113,6 +114,24 @@ export default function OrdersPage() {
   const supabase = createClient();
   const pricing = useDealerPricing(supabase);
   const [paymentTerm, setPaymentTerm] = useState<number>(30);
+  const [currency, setCurrency] = useState('TRY');
+  const [exRate, setExRate] = useState<number>(1);
+  const [rateDate, setRateDate] = useState<string | null>(null);
+  const [fx, setFx] = useState<FxRates | null>(null);
+  const [fxReady, setFxReady] = useState(false);
+  const conv = (price: number, productId?: string) => {
+    const p: any = products.find((x: any) => x.id === productId);
+    return convert(Number(price) || 0, p?.currency || 'TRY', currency, fx, exRate);
+  };
+  const changeCurrency = async (cur: string) => {
+    const rates = fx || await getRates();
+    if (!fx && rates) setFx(rates);
+    const nr = cur === 'TRY' ? 1 : (toTry(rates, cur) || 1);
+    if (cur !== 'TRY' && !toTry(rates, cur)) alert('TCMB kuru alınamadı; kuru elle girin.');
+    const oldRate = exRate || 1;
+    setItems(list => list.map(it => ({ ...it, unit_price: Math.round((Number(it.unit_price) || 0) * oldRate / nr * 100) / 100 })));
+    setCurrency(cur); setExRate(nr); setRateDate(cur === 'TRY' ? null : rates?.date || null);
+  };
 
   // Bayi ise kalemlere bayi fiyatı ve iskontosunu uygular
   const repriceItems = (list: typeof items, customerId: string, term: number, keepPrice = false) =>
@@ -120,7 +139,7 @@ export default function OrdersPage() {
       if (!it.product_id) return it;
       const pr = pricing.priceFor(customerId, it.product_id, Number(it.quantity) || 1, term);
       if (!pr) return { ...it, note: undefined };
-      return { ...it, unit_price: keepPrice ? it.unit_price : pr.listPrice, discount: pr.discountPct, note: pr.explanation };
+      return { ...it, unit_price: keepPrice ? it.unit_price : conv(pr.listPrice, it.product_id), discount: pr.discountPct, note: pr.explanation };
     });
 
   const fetchData = async () => {
@@ -129,7 +148,7 @@ export default function OrdersPage() {
       const [ordersRes, customersRes, productsRes] = await Promise.all([
        supabase.from('orders').select('*').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name, address').order('name'),
-        supabase.from('products').select('id, name, price, tax_rate').eq('status', 'active'),
+        supabase.from('products').select('*').eq('status', 'active'),
       ]);
       
       const { data: invs } = await supabase.from('invoices').select('order_id').neq('status', 'cancelled');
@@ -158,6 +177,9 @@ export default function OrdersPage() {
     });
     setItems([{ product_id: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 20 }]);
     setPaymentTerm(30);
+    setCurrency('TRY'); setExRate(1); setRateDate(null);
+    if (!fx) getRates().then(r => r && setFx(r));
+    supabase.from('orders').select('exchange_rate').limit(1).then(({ error }: any) => setFxReady(!error));
     setModalOpen(true);
   };
 
@@ -176,7 +198,7 @@ export default function OrdersPage() {
     if (field === 'product_id') {
       const product = products.find(p => p.id === value);
       if (product) {
-        newItems[index].unit_price = product.price;
+        newItems[index].unit_price = conv(product.price, product.id);
         newItems[index].tax_rate = product.tax_rate;
       }
     }
@@ -249,6 +271,7 @@ export default function OrdersPage() {
       
       const orderData = {
         payment_term_days: paymentTerm,
+        ...(fxReady ? { currency, exchange_rate: currency === 'TRY' ? 1 : exRate, rate_date: currency === 'TRY' ? null : rateDate } : {}),
         order_number: await nextDocumentNumber(supabase, 'order'),
         customer_id: formData.customer_id,
         shipping_address: formData.shipping_address,
@@ -364,7 +387,7 @@ export default function OrdersPage() {
   const totalOrders = orders.length;
   const pendingOrders = orders.filter(o => o.status === 'pending').length;
   const deliveredOrders = orders.filter(o => o.status === 'delivered');
-  const totalRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0);
+  const totalRevenue = deliveredOrders.reduce((sum, o) => sum + Number(o.total) * (Number((o as any).exchange_rate) || 1), 0);
 
   const { subtotal, taxTotal, discountAmount, netTotal, total } = calculateTotals();
 
@@ -494,7 +517,7 @@ export default function OrdersPage() {
                             {(order as any).source === 'portal' && <span className="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700" title={(order as any).notes || ''}>Bayi portalı</span>}
                           </td>
                           <td className="px-4 py-3 font-medium">{customers.find(c => c.id === order.customer_id)?.name || '-'}</td>
-                          <td className="px-4 py-3 text-right font-semibold">₺{formatMoney(order.total)}</td>
+                          <td className="px-4 py-3 text-right font-semibold">{money(order.total, (order as any).currency)}{(order as any).currency && (order as any).currency !== 'TRY' && <div className="text-[10px] font-normal text-slate-400">≈ ₺{formatMoney(Number(order.total) * Number((order as any).exchange_rate || 1))}</div>}</td>
                           <td className="px-4 py-3 text-center">
                             <Badge variant={statusConfig[order.status]?.variant || 'default'}>
                               <StatusIcon className="h-3 w-3 mr-1" />
@@ -604,6 +627,26 @@ export default function OrdersPage() {
             />
           </div>
 
+          {fxReady && (
+            <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 p-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Para birimi</label>
+                <select value={currency} onChange={(e) => changeCurrency(e.target.value)} className="h-9 rounded-lg border border-slate-200 px-2 text-sm">
+                  {CURRENCIES.map(c => <option key={c} value={c}>{CUR_LABEL[c]}</option>)}
+                </select>
+              </div>
+              {currency !== 'TRY' && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Kur (1 {currency} = ₺)</label>
+                    <input type="number" step="0.0001" value={exRate} onChange={(e) => setExRate(parseFloat(e.target.value) || 0)} className="h-9 w-28 rounded-lg border border-slate-200 px-2 text-right text-sm" />
+                  </div>
+                  <p className="pb-2 text-xs text-slate-500">TCMB döviz satış{rateDate ? ` · ${rateDate.split('-').reverse().join('.')}` : ''}</p>
+                </>
+              )}
+            </div>
+          )}
+
           <DealerTermBar
             termDays={paymentTerm}
             onTermChange={changeTerm}
@@ -648,7 +691,7 @@ export default function OrdersPage() {
                       >
                         <option value="">Ürün Seç</option>
                         {products.map(p => (
-                          <option key={p.id} value={p.id}>{p.name} - ₺{formatMoney(p.price)}</option>
+                          <option key={p.id} value={p.id}>{p.name} - {money(p.price, (p as any).currency)}</option>
                         ))}
                       </select>
                     </div>
@@ -688,7 +731,7 @@ export default function OrdersPage() {
           <div className="border-t pt-4 space-y-2">
             <div className="flex justify-between text-sm">
               <span>Ara Toplam:</span>
-              <span className="font-medium">₺{formatMoney(subtotal)}</span>
+              <span className="font-medium">{money(subtotal, currency)}</span>
             </div>
             <div className="flex justify-between text-sm items-center">
               <span>Genel İskonto (%):</span>
@@ -703,21 +746,21 @@ export default function OrdersPage() {
               <>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">İskonto Tutarı:</span>
-                  <span className="font-medium text-red-600">-₺{formatMoney(discountAmount)}</span>
+                  <span className="font-medium text-red-600">-{money(discountAmount, currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">KDV Matrahı:</span>
-                  <span className="font-medium">₺{formatMoney(netTotal)}</span>
+                  <span className="font-medium">{money(netTotal, currency)}</span>
                 </div>
               </>
             )}
             <div className="flex justify-between text-sm">
               <span>KDV:</span>
-              <span className="font-medium">₺{formatMoney(taxTotal)}</span>
+              <span className="font-medium">{money(taxTotal, currency)}</span>
             </div>
             <div className="flex justify-between text-lg font-bold border-t pt-2">
               <span>Genel Toplam:</span>
-              <span className="text-indigo-600">₺{formatMoney(total)}</span>
+              <span className="text-indigo-600">{money(total, currency)}</span>
             </div>
           </div>
 
@@ -785,8 +828,8 @@ export default function OrdersPage() {
                   <tr key={i} className="border-b">
                     <td className="px-3 py-2">{item.product?.name || (item as any).description || '-'}</td>
                     <td className="px-3 py-2 text-right">{item.quantity}</td>
-                    <td className="px-3 py-2 text-right">₺{formatMoney(item.unit_price)}</td>
-                    <td className="px-3 py-2 text-right font-medium">₺{formatMoney(item.total)}</td>
+                    <td className="px-3 py-2 text-right">{money(item.unit_price, (selectedOrder as any)?.currency)}</td>
+                    <td className="px-3 py-2 text-right font-medium">{money(item.total, (selectedOrder as any)?.currency)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -795,21 +838,21 @@ export default function OrdersPage() {
             <div className="border-t pt-4 space-y-2">
               <div className="flex justify-between">
                 <span>Ara Toplam:</span>
-                <span>₺{formatMoney(selectedOrder.subtotal)}</span>
+                <span>{money(selectedOrder.subtotal, (selectedOrder as any).currency)}</span>
               </div>
               {Number(selectedOrder.discount) > 0 && (
                 <div className="flex justify-between text-red-600">
                   <span>İskonto (%{selectedOrder.discount}):</span>
-                  <span>-₺{formatMoney(selectedOrder.subtotal * selectedOrder.discount / 100)}</span>
+                  <span>-{money(selectedOrder.subtotal * selectedOrder.discount / 100, (selectedOrder as any).currency)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span>KDV:</span>
-                <span>₺{formatMoney(selectedOrder.tax_total)}</span>
+                <span>{money(selectedOrder.tax_total, (selectedOrder as any).currency)}</span>
               </div>
               <div className="flex justify-between text-xl font-bold border-t pt-2">
                 <span>Genel Toplam:</span>
-                <span className="text-indigo-600">₺{formatMoney(selectedOrder.total)}</span>
+                <span className="text-indigo-600">{money(selectedOrder.total, (selectedOrder as any).currency)}</span>
               </div>
             </div>
           </div>

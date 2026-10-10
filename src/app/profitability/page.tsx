@@ -31,7 +31,7 @@ export default function ProfitabilityPage() {
 
   const load = useCallback(async () => {
     const [o, pr, po, rc, ex, pc, sp, fs] = await Promise.all([
-      supabase.from('orders').select('id, order_number, customer_id, order_date, created_at, subtotal, discount, status').neq('status', 'cancelled'),
+      supabase.from('orders').select('*').neq('status', 'cancelled'),
       supabase.from('products').select('id, name, cost_price, supplier_id'),
       supabase.from('purchase_orders').select('id, supplier_id, sales_order_id, order_date, subtotal, status').neq('status', 'cancelled'),
       supabase.from('supplier_receivables').select('*').neq('status', 'rejected'),

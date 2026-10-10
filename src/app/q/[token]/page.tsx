@@ -6,13 +6,16 @@ import { createClient } from '@/lib/supabase';
 import { CheckCircle2, XCircle, MessageSquare, Printer, Phone, Mail, Clock, FileText, AlertTriangle } from 'lucide-react';
 
 const n = (v: any) => Number(v) || 0;
-const tl = (v: number) => '₺' + v.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const SYM: Record<string, string> = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
+let CUR = 'TRY';
+const tl = (v: number) => (SYM[CUR] || CUR + ' ') + v.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fd = (d?: string | null) => (d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' }) : '-');
 
 export default function PublicQuotePage() {
   const supabase = createClient();
   const { token } = useParams<{ token: string }>();
   const [q, setQ] = useState<any>(undefined);
+  const [fxInfo, setFxInfo] = useState<any>(null);
   const [mode, setMode] = useState<'accepted' | 'rejected' | 'revision_requested' | null>(null);
   const [form, setForm] = useState({ name: '', title: '', note: '', agree: false });
   const [busy, setBusy] = useState(false);
@@ -20,6 +23,10 @@ export default function PublicQuotePage() {
 
   const load = async (track: boolean) => {
     const { data, error } = await supabase.rpc('public_quote_get', { p_token: token, p_track: track });
+    if (!error && data) {
+      const { data: c } = await supabase.rpc('public_quote_currency', { p_token: token });
+      if (c) { CUR = c.currency || 'TRY'; setFxInfo(c); }
+    }
     setQ(error ? null : data);
   };
   useEffect(() => {
@@ -126,6 +133,7 @@ export default function PublicQuotePage() {
               {generalDisc > 0 && <div className="flex justify-between"><span className="text-slate-500">Genel iskonto (%{generalDisc})</span><span>-{tl(lineSum * generalDisc / 100)}</span></div>}
               <div className="flex justify-between"><span className="text-slate-500">KDV</span><span>{tl(n(q.tax_total))}</span></div>
               <div className="flex justify-between border-t pt-1 text-lg font-bold"><span>Genel toplam</span><span>{tl(n(q.total))}</span></div>
+              {fxInfo && fxInfo.currency !== 'TRY' && <p className="text-right text-xs text-slate-500">TL karşılığı ≈ ₺{(n(q.total) * n(fxInfo.exchange_rate)).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (1 {fxInfo.currency} = ₺{n(fxInfo.exchange_rate).toLocaleString('tr-TR', { maximumFractionDigits: 4 })}, {fxInfo.rate_note || 'TCMB'}{fxInfo.rate_date ? ' ' + fd(fxInfo.rate_date) : ''})</p>}
               {q.payment_term_days !== null && q.payment_term_days !== undefined && <p className="text-right text-xs text-slate-500">Ödeme: {n(q.payment_term_days) === 0 ? 'Peşin' : `${q.payment_term_days} gün vadeli`}</p>}
             </div>
 

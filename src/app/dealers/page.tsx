@@ -102,7 +102,7 @@ export default function DealersPage() {
     const ids = dl.map((x: any) => x.id);
     if (ids.length) {
       const [o, inv, c] = await Promise.all([
-        supabase.from('orders').select('id, customer_id, order_date, created_at, subtotal, discount, total, status').in('customer_id', ids),
+        supabase.from('orders').select('*').in('customer_id', ids),
         supabase.from('invoices').select('customer_id, issue_date, subtotal, discount_amount, status').in('customer_id', ids),
         supabase.from('collections').select('customer_id, amount, status, due_date, payment_date').in('customer_id', ids),
       ]);

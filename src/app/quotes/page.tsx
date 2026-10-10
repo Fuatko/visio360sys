@@ -12,6 +12,7 @@ import { nextDocumentNumber } from '@/lib/doc-number';
 import { useDealerPricing } from '@/lib/use-dealer-pricing';
 import DealerTermBar from '@/components/DealerTermBar';
 import { useAuth } from '@/lib/auth-context';
+import { CURRENCIES, CUR_LABEL, money, getRates, convert, toTry, FxRates } from '@/lib/fx';
 import { evaluateQuote, APPROVAL_STATUS, CUSTOMER_RESPONSE, QuotePolicy, DEFAULT_POLICY } from '@/lib/quote-approval';
 
 // ISO 9001 madde 8.2.3: teklif müşteriye taahhüt edilmeden önce gözden geçirilir
@@ -117,6 +118,11 @@ export default function QuotesPage() {
   const [reviewItems, setReviewItems] = useState<any[]>([]);
   const [shareTarget, setShareTarget] = useState<any | null>(null);
   const [onlyPending, setOnlyPending] = useState(false);
+  const [currency, setCurrency] = useState('TRY');
+  const [exRate, setExRate] = useState<number>(1);
+  const [rateDate, setRateDate] = useState<string | null>(null);
+  const [fx, setFx] = useState<FxRates | null>(null);
+  const [fxReady, setFxReady] = useState(false);   // doviz.sql kurulu mu
   
   const [formData, setFormData] = useState({
     customer_id: '',
@@ -139,14 +145,31 @@ export default function QuotesPage() {
   const pricing = useDealerPricing(supabase);
   const [paymentTerm, setPaymentTerm] = useState<number>(30);
 
+  // Ürün fiyatını teklif para birimine çevir (TCMB döviz satış kuru)
+  const conv = (price: number, productId?: string) => {
+    const p: any = products.find(x => x.id === productId);
+    return convert(Number(price) || 0, p?.currency || 'TRY', currency, fx, exRate);
+  };
+
   // Bayi ise kalemlere bayi fiyatı ve iskontosunu uygular
   const repriceItems = (list: typeof items, customerId: string, term: number, keepPrice = false) =>
     list.map(it => {
       if (!it.product_id) return it;
       const pr = pricing.priceFor(customerId, it.product_id, Number(it.quantity) || 1, term);
       if (!pr) return { ...it, note: undefined };
-      return { ...it, unit_price: keepPrice ? it.unit_price : pr.listPrice, discount: pr.discountPct, note: pr.explanation };
+      return { ...it, unit_price: keepPrice ? it.unit_price : conv(pr.listPrice, it.product_id), discount: pr.discountPct, note: pr.explanation };
     });
+
+  // Para birimi değişince mevcut kalemleri yeni kura çevir
+  const changeCurrency = async (cur: string) => {
+    const rates = fx || await getRates();
+    if (!fx && rates) setFx(rates);
+    const newRate = cur === 'TRY' ? 1 : toTry(rates, cur);
+    if (cur !== 'TRY' && !newRate) { alert('TCMB kuru alınamadı; kuru elle girebilirsiniz.'); }
+    const oldRate = exRate || 1, nr = newRate || 1;
+    setItems(list => list.map(it => ({ ...it, unit_price: Math.round((Number(it.unit_price) || 0) * oldRate / nr * 100) / 100 })));
+    setCurrency(cur); setExRate(nr); setRateDate(cur === 'TRY' ? null : rates?.date || null);
+  };
 
   const changeCustomer = (customerId: string) => {
     setFormData(f => ({ ...f, customer_id: customerId }));
@@ -173,6 +196,8 @@ export default function QuotesPage() {
         supabase.from('quote_policies').select('*').maybeSingle(),
       ]);
       setApprovalReady(!probe.error);
+      const fxProbe = await supabase.from('quotes').select('exchange_rate').limit(1);
+      setFxReady(!fxProbe.error);
       if (pol.data) setPolicy(pol.data);
       
       const custs = customersRes.data || [];
@@ -223,6 +248,8 @@ export default function QuotesPage() {
     setRevisionSource(null);
     setRevisionReason('');
     setPaymentTerm(30);
+    setCurrency('TRY'); setExRate(1); setRateDate(null);
+    if (!fx) getRates().then(r => r && setFx(r));
     setModalOpen(true);
   };
 
@@ -340,6 +367,8 @@ export default function QuotesPage() {
     setRevisionSource(q);
     setRevisionReason('');
     setPaymentTerm((q as any).payment_term_days ?? pricing.defaultTerm(q.customer_id) ?? 30);
+    setCurrency((q as any).currency || 'TRY'); setExRate(Number((q as any).exchange_rate) || 1); setRateDate((q as any).rate_date || null);
+    if (!fx) getRates().then(r => r && setFx(r));
     setModalOpen(true);
   };
 
@@ -359,7 +388,7 @@ export default function QuotesPage() {
     if (field === 'product_id') {
       const product = products.find(p => p.id === value);
       if (product) {
-        newItems[index].unit_price = product.price;
+        newItems[index].unit_price = conv(product.price, product.id);
         newItems[index].tax_rate = product.tax_rate;
       }
     }
@@ -429,6 +458,7 @@ export default function QuotesPage() {
         status: 'draft',
         opportunity_id: rev ? (rev.opportunity_id || null) : (opportunityLink?.id || null),
         sales_person_id: rev ? (rev.sales_person_id || null) : (opportunityLink?.assigned_to || null),
+        ...(fxReady ? { currency, exchange_rate: currency === 'TRY' ? 1 : exRate, rate_date: currency === 'TRY' ? null : rateDate, rate_note: currency === 'TRY' ? null : 'TCMB döviz satış' } : {}),
       };
 
       const { data: quote, error } = await supabase
@@ -709,7 +739,7 @@ export default function QuotesPage() {
                           {quote.subject || '-'}
                           {quote.opportunity_id && <span className="ml-2 inline-flex items-center gap-0.5 text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded" title="Bir fırsata bağlı"><Target className="h-3 w-3" />Fırsat</span>}
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold">₺{formatMoney(quote.total)}</td>
+                        <td className="px-4 py-3 text-right font-semibold">{money(quote.total, (quote as any).currency)}{(quote as any).currency && (quote as any).currency !== 'TRY' && <div className="text-[10px] font-normal text-slate-400">≈ ₺{formatMoney(Number(quote.total) * Number((quote as any).exchange_rate || 1))}</div>}</td>
                         <td className="px-4 py-3 text-center">
                           <Badge variant={statusConfig[quote.status]?.variant || 'default'}>
                             {statusConfig[quote.status]?.label || quote.status}
@@ -864,6 +894,26 @@ export default function QuotesPage() {
             placeholder="Örn: Yazılım Geliştirme Projesi"
           />
 
+          {fxReady && (
+            <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 p-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Para birimi</label>
+                <select value={currency} onChange={(e) => changeCurrency(e.target.value)} className="h-9 rounded-lg border border-slate-200 px-2 text-sm">
+                  {CURRENCIES.map(c => <option key={c} value={c}>{CUR_LABEL[c]}</option>)}
+                </select>
+              </div>
+              {currency !== 'TRY' && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">Kur (1 {currency} = ₺)</label>
+                    <input type="number" step="0.0001" value={exRate} onChange={(e) => setExRate(parseFloat(e.target.value) || 0)} className="h-9 w-28 rounded-lg border border-slate-200 px-2 text-right text-sm" />
+                  </div>
+                  <p className="pb-2 text-xs text-slate-500">TCMB döviz satış{rateDate ? ` · ${formatDate(rateDate)}` : ''}. Ürün fiyatları otomatik çevrilir; kur elle değiştirilebilir.</p>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Ürün Kalemleri */}
           <div>
             <div className="flex justify-between items-center mb-3">
@@ -885,7 +935,7 @@ export default function QuotesPage() {
                       >
                         <option value="">Ürün Seç</option>
                         {products.map(p => (
-                          <option key={p.id} value={p.id}>{p.name} - ₺{formatMoney(p.price)}</option>
+                          <option key={p.id} value={p.id}>{p.name} - {money(p.price, (p as any).currency)}</option>
                         ))}
                       </select>
                     </div>
@@ -927,7 +977,7 @@ export default function QuotesPage() {
           <div className="border-t pt-4 space-y-2">
             <div className="flex justify-between text-sm">
               <span className="text-slate-600">Ara Toplam:</span>
-              <span className="font-medium">₺{formatMoney(subtotal)}</span>
+              <span className="font-medium">{money(subtotal, currency)}</span>
             </div>
             <div className="flex justify-between text-sm items-center">
               <span className="text-slate-600">Genel İskonto (%):</span>
@@ -944,22 +994,23 @@ export default function QuotesPage() {
               <>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">İskonto Tutarı:</span>
-                  <span className="font-medium text-red-600">-₺{formatMoney(discountAmount)}</span>
+                  <span className="font-medium text-red-600">-{money(discountAmount, currency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">KDV Matrahı:</span>
-                  <span className="font-medium">₺{formatMoney(netTotal)}</span>
+                  <span className="font-medium">{money(netTotal, currency)}</span>
                 </div>
               </>
             )}
             <div className="flex justify-between text-sm">
               <span className="text-slate-600">KDV:</span>
-              <span className="font-medium">₺{formatMoney(taxTotal)}</span>
+              <span className="font-medium">{money(taxTotal, currency)}</span>
             </div>
             <div className="flex justify-between text-lg font-bold border-t pt-2">
               <span>Genel Toplam:</span>
-              <span className="text-indigo-600">₺{formatMoney(total)}</span>
+              <span className="text-indigo-600">{money(total, currency)}</span>
             </div>
+            {currency !== 'TRY' && exRate > 0 && <p className="text-right text-xs text-slate-500">TL karşılığı ≈ ₺{formatMoney(total * exRate)}</p>}
           </div>
 
           <Textarea
@@ -1034,9 +1085,9 @@ export default function QuotesPage() {
                     <tr key={i} className="border-b">
                       <td className="px-3 py-2">{item.product?.name || (item as any).description || '-'}</td>
                       <td className="px-3 py-2 text-right">{item.quantity}</td>
-                      <td className="px-3 py-2 text-right">₺{formatMoney(item.unit_price)}</td>
+                      <td className="px-3 py-2 text-right">{money(item.unit_price, (selectedQuote as any).currency)}</td>
                       <td className="px-3 py-2 text-right">%{item.discount}</td>
-                      <td className="px-3 py-2 text-right font-medium">₺{formatMoney(item.total)}</td>
+                      <td className="px-3 py-2 text-right font-medium">{money(item.total, (selectedQuote as any).currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1047,22 +1098,25 @@ export default function QuotesPage() {
             <div className="border-t pt-4 space-y-2">
               <div className="flex justify-between">
                 <span>Ara Toplam:</span>
-                <span>₺{formatMoney(selectedQuote.subtotal)}</span>
+                <span>{money(selectedQuote.subtotal, (selectedQuote as any).currency)}</span>
               </div>
               {selectedQuote.discount > 0 && (
                 <div className="flex justify-between text-red-600">
                   <span>İskonto (%{selectedQuote.discount}):</span>
-                  <span>-₺{formatMoney(selectedQuote.subtotal * selectedQuote.discount / 100)}</span>
+                  <span>-{money(selectedQuote.subtotal * selectedQuote.discount / 100, (selectedQuote as any).currency)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span>KDV:</span>
-                <span>₺{formatMoney(selectedQuote.tax_total)}</span>
+                <span>{money(selectedQuote.tax_total, (selectedQuote as any).currency)}</span>
               </div>
               <div className="flex justify-between text-xl font-bold border-t pt-2">
                 <span>Genel Toplam:</span>
-                <span className="text-indigo-600">₺{formatMoney(selectedQuote.total)}</span>
+                <span className="text-indigo-600">{money(selectedQuote.total, (selectedQuote as any).currency)}</span>
               </div>
+              {(selectedQuote as any).currency && (selectedQuote as any).currency !== 'TRY' && (
+                <p className="text-right text-xs text-slate-500">Kur: 1 {(selectedQuote as any).currency} = ₺{Number((selectedQuote as any).exchange_rate).toLocaleString('tr-TR', { maximumFractionDigits: 4 })} ({(selectedQuote as any).rate_note || 'TCMB'}{(selectedQuote as any).rate_date ? `, ${formatDate((selectedQuote as any).rate_date)}` : ''}) · TL karşılığı ₺{formatMoney(Number(selectedQuote.total) * Number((selectedQuote as any).exchange_rate))}</p>
+              )}
             </div>
 
             {/* Notlar */}

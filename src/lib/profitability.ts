@@ -33,16 +33,17 @@ export function computePnl(d: PnlInput): Pnl {
 
   for (const o of d.orders) {
     const gd = Math.min(Math.max(n(o.discount), 0), 100) / 100;
+    const fx = n(o.exchange_rate) > 0 ? n(o.exchange_rate) : 1;   // dövizli siparişin TL karşılığı
     const its = d.items.filter(i => i.order_id === o.id);
     const linkedPos = d.pos.filter(p => p.sales_order_id === o.id);
     const poSuppliers = new Set(linkedPos.map(p => p.supplier_id));
     linkedPos.forEach(p => { b(p.supplier_id).cogs += n(p.subtotal); });
 
-    if (!its.length) { b('own').revenue += n(o.subtotal) * (1 - gd); continue; }
+    if (!its.length) { b('own').revenue += n(o.subtotal) * (1 - gd) * fx; continue; }
     for (const i of its) {
       const p: any = prod.get(i.product_id);
       const key = p?.supplier_id || 'own';
-      const lineNet = (n(i.total) || n(i.quantity) * n(i.unit_price) * (1 - n(i.discount) / 100)) * (1 - gd);
+      const lineNet = (n(i.total) || n(i.quantity) * n(i.unit_price) * (1 - n(i.discount) / 100)) * (1 - gd) * fx;
       b(key).revenue += lineNet;
       if (p?.supplier_id && poSuppliers.has(p.supplier_id)) continue;   // gerçek alış maliyeti satın almadan geldi
       if (p && p.cost_price !== null && p.cost_price !== undefined && p.cost_price !== '') b(key).cogs += n(p.cost_price) * n(i.quantity);

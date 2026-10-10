@@ -42,6 +42,7 @@ export async function createOrderFromQuote(supabase: Supa, quoteId: string) {
       quote_id: quote.id,
       opportunity_id: quote.opportunity_id || null,
       payment_term_days: quote.payment_term_days ?? null,
+      ...(quote.currency ? { currency: quote.currency, exchange_rate: quote.exchange_rate ?? 1, rate_date: quote.rate_date ?? null } : {}),
     }])
     .select()
     .single();
@@ -134,8 +135,10 @@ export async function createOrderFromOpportunity(supabase: Supa, opp: any) {
 
 /** Siparişin KDV hariç net tutarı (satış hedefleri ile karşılaştırma için). */
 export function orderNetAmount(o: any): number {
+  // Dövizli siparişte TL karşılığı (kur yoksa 1)
+  const fx = o.exchange_rate != null && Number(o.exchange_rate) > 0 ? Number(o.exchange_rate) : 1;
   if (o.subtotal != null) {
-    return Number(o.subtotal) * (1 - (Number(o.discount) || 0) / 100);
+    return Number(o.subtotal) * (1 - (Number(o.discount) || 0) / 100) * fx;
   }
-  return Number(o.total ?? o.total_amount ?? o.grand_total ?? 0);
+  return Number(o.total ?? o.total_amount ?? o.grand_total ?? 0) * fx;
 }

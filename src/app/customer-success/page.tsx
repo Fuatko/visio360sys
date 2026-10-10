@@ -29,7 +29,7 @@ export default function CustomerSuccessPage() {
     const [c, t, o, col, a, s, cp, ct, op] = await Promise.all([
       supabase.from('customers').select('id, name, assigned_to, customer_type').order('name'),
       supabase.from('sales_team').select('id, name').order('name'),
-      supabase.from('orders').select('customer_id, order_date, created_at, subtotal, discount, total, status'),
+      supabase.from('orders').select('*'),
       supabase.from('collections').select('customer_id, amount, status, due_date'),
       supabase.from('crm_activities').select('customer_id, activity_date').limit(5000),
       supabase.from('customer_surveys').select('*').order('sent_at', { ascending: false }),
