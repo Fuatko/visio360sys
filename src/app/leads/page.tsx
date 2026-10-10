@@ -3,7 +3,7 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatDate, cleanPayload } from '@/lib/utils';
-import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building2, ArrowRight, Star, TrendingUp, Target } from 'lucide-react';
+import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building2, ArrowRight, Star, TrendingUp, Target, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -502,6 +502,7 @@ export default function LeadsPage() {
                                 <ArrowRight className="h-4 w-4 text-emerald-500" />
                               </Button>
                             </>)}
+                            <a href={`/briefs?lead=${lead.id}`} title="Görüşmeye hazırlan (yapay zekâ)" className="inline-flex h-8 items-center rounded-lg px-2 text-indigo-600 hover:bg-indigo-50"><Sparkles className="h-4 w-4" /></a>
                             <Button variant="ghost" size="sm" onClick={() => openModal(lead)}>
                               <Edit2 className="h-4 w-4" />
                             </Button>

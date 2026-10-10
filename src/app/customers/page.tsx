@@ -4,7 +4,7 @@ import Header from '@/components/Header';
 import SalesFilter from '@/components/SalesFilter';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui';
 import { formatMoney, cleanPayload } from '@/lib/utils';
-import { Building2, Plus, Edit2, Trash2, Mail, Phone, User, RefreshCw, Search } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, Mail, Phone, User, RefreshCw, Search, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { DEALER_LEVELS, PAYMENT_TERMS, termLabel } from '@/lib/dealer-pricing';
@@ -221,7 +221,7 @@ export default function CustomersPage() {
                   <div className="mt-3 flex items-center justify-between border-t pt-3">
                     <p className="text-lg font-bold text-blue-600">₺{formatMoney(c.total_sales || 0)}</p>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openModal(c)}><Edit2 className="h-4 w-4" /></Button>
+                      <a href={`/briefs?customer=${c.id}`} title="Görüşmeye hazırlan (yapay zekâ)" className="inline-flex h-8 items-center rounded-lg px-2 text-indigo-600 hover:bg-indigo-50"><Sparkles className="h-4 w-4" /></a><Button variant="ghost" size="sm" onClick={() => openModal(c)}><Edit2 className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="sm" onClick={() => handleDelete(c.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                     </div>
                   </div>

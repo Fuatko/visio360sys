@@ -42,6 +42,8 @@ import {
   History,
   Handshake,
   Store,
+  Sparkles,
+  Gauge,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -56,6 +58,7 @@ const mainItems = [
   { href: '/leads', label: 'Potansiyel Müşteriler', icon: UserPlus },
   { href: '/customers', label: 'Müşteriler', icon: Building2 },
   { href: '/customer-360', label: 'Müşteri 360°', icon: Eye },
+  { href: '/briefs', label: 'Görüşme Hazırlık (AI)', icon: Sparkles },
   { href: '/crm', label: 'CRM Aktiviteleri', icon: Heart },
 ];
 
@@ -63,6 +66,7 @@ const mainItems = [
 const salesItems = [
   { href: '/products', label: 'Ürün Kataloğu', icon: Package },
   { href: '/opportunities', label: 'Fırsatlar', icon: Target },
+  { href: '/forecast', label: 'Satış Tahmini & Huni', icon: Gauge },
   { href: '/quotes', label: 'Teklifler', icon: FileSignature },
   { href: '/orders', label: 'Siparişler', icon: ShoppingCart },
   { href: '/invoices', label: 'Faturalar', icon: Receipt },

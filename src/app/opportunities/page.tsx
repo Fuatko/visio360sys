@@ -4,11 +4,12 @@ import Header from '@/components/Header';
 import SalesFilter from '@/components/SalesFilter';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui';
 import { formatMoney, cleanPayload } from '@/lib/utils';
-import { TrendingUp, Plus, Edit2, Trash2, RefreshCw, Building2, Calendar, User, FileText, ShoppingCart, Trophy } from 'lucide-react';
+import { TrendingUp, Plus, Edit2, Trash2, RefreshCw, Building2, Calendar, User, FileText, ShoppingCart, Trophy, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createOrderFromOpportunity, WON_STAGES, LOST_STAGES } from '@/lib/sales-flow';
+import { FORECAST_CATEGORIES, LOSS_REASONS, WIN_REASONS, fcLabel, staleSignals } from '@/lib/pipeline';
 import BantChecklist, { BantBadge, EMPTY_BANT, normalizeBant, bantSuggestedProbability } from '@/components/BantChecklist';
 
 const STAGES = ['Keşif', 'Teklif', 'Müzakere', 'Kapanış', 'Kazanıldı', 'Kaybedildi'];
@@ -55,13 +56,28 @@ export default function OpportunitiesPage() {
     title: '', customer_id: '', assigned_to: '', value: 0, probability: 50,
     stage: 'Keşif', expected_close: '', notes: '', qualification: EMPTY_BANT as any,
     referral_partner_id: '', referral_commission_rate: '' as any,
+    forecast_category: 'pipeline', close_reason: '', close_competitor_id: '', close_note: '',
   });
+  const [discipline, setDiscipline] = useState(false);   // satis-zekasi.sql kurulu mu
+  const [competitors, setCompetitors] = useState<{ id: string; name: string }[]>([]);
+  const [lastActivity, setLastActivity] = useState<Record<string, string>>({});
+  const [filterStale, setFilterStale] = useState(false);
 
   const supabase = createClient();
 
   const fetchData = async () => {
     setLoading(true);
     try {
+      const [probe, compRes, actRes] = await Promise.all([
+        supabase.from('opportunities').select('forecast_category').limit(1),
+        supabase.from('competitors').select('id, name').order('name'),
+        supabase.from('crm_activities').select('customer_id, activity_date').order('activity_date', { ascending: false }).limit(2000),
+      ]);
+      setDiscipline(!probe.error);
+      setCompetitors(compRes.data || []);
+      const la: Record<string, string> = {};
+      (actRes.data || []).forEach((a: any) => { if (a.customer_id && !la[a.customer_id]) la[a.customer_id] = a.activity_date; });
+      setLastActivity(la);
       const [oppRes, custRes, teamRes] = await Promise.all([
         supabase.from('opportunities').select('*').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name').order('name'),
@@ -100,10 +116,12 @@ export default function OpportunitiesPage() {
         expected_close: opp.expected_close || '', notes: opp.notes || '',
         referral_partner_id: (opp as any).referral_partner_id || '', referral_commission_rate: (opp as any).referral_commission_rate ?? '',
         qualification: normalizeBant((opp as any).qualification),
+        forecast_category: (opp as any).forecast_category || 'pipeline', close_reason: (opp as any).close_reason || '',
+        close_competitor_id: (opp as any).close_competitor_id || '', close_note: (opp as any).close_note || '',
       });
     } else {
       setEditingOpp(null);
-      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '', referral_partner_id: '', referral_commission_rate: '' as any, qualification: EMPTY_BANT as any });
+      setFormData({ title: '', customer_id: '', assigned_to: '', value: 0, probability: 50, stage: 'Keşif', expected_close: '', notes: '', referral_partner_id: '', referral_commission_rate: '' as any, qualification: EMPTY_BANT as any, forecast_category: 'pipeline', close_reason: '', close_competitor_id: '', close_note: '' });
     }
     setModalOpen(true);
   };
@@ -128,11 +146,20 @@ export default function OpportunitiesPage() {
       const isWon = WON_STAGES.includes(formData.stage);
       const isLost = LOST_STAGES.includes(formData.stage);
       const wasClosed = editingOpp && [...WON_STAGES, ...LOST_STAGES].includes(editingOpp.stage);
+      if (discipline && (isWon || isLost) && !formData.close_reason) {
+        alert(isLost ? 'Kaybedildi olarak kapatırken kayıp nedenini seçin (kazanma/kaybetme analizi için).' : 'Kazanıldı olarak kapatırken kazanma nedenini seçin.');
+        setSaving(false); return;
+      }
+      const { forecast_category, close_reason, close_competitor_id, close_note, ...base } = formData;
       const dataToSave: any = {
-        ...formData,
+        ...base,
         customer_id: formData.customer_id || null,
         assigned_to: formData.assigned_to || null,
       };
+      if (discipline) {
+        Object.assign(dataToSave, { forecast_category, close_reason: (isWon || isLost) ? close_reason || null : null,
+          close_competitor_id: (isWon || isLost) ? close_competitor_id || null : null, close_note: (isWon || isLost) ? close_note || null : null });
+      }
       if (isWon) dataToSave.probability = 100;
       if (isLost) dataToSave.probability = 0;
       if ((isWon || isLost) && !wasClosed) dataToSave.closed_at = new Date().toISOString();
@@ -170,7 +197,8 @@ export default function OpportunitiesPage() {
     const matchStage = !filterStage || o.stage === filterStage;
     const matchPerson = !filterPerson || o.assigned_to === filterPerson;
     const matchRegion = !filterRegion || (o.sales_team?.region === filterRegion);
-    return matchStage && matchPerson && matchRegion;
+    const matchStale = !filterStale || staleSignals(o, o.customer_id ? (lastActivity[o.customer_id] ?? null) : undefined).length > 0;
+    return matchStage && matchPerson && matchRegion && matchStale;
   });
 
   const openOpps = filtered.filter(o => ![...WON_STAGES, ...LOST_STAGES].includes(o.stage));
@@ -210,6 +238,7 @@ export default function OpportunitiesPage() {
             <option value="">Tüm Aşamalar</option>
             {STAGES.map(st => <option key={st} value={st}>{st}</option>)}
           </select>
+          <label className="flex items-center gap-1 text-sm text-amber-700"><input type="checkbox" checked={filterStale} onChange={e => setFilterStale(e.target.checked)} />Sadece ilgi bekleyen (durgun) fırsatlar</label>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={fetchData}><RefreshCw className="h-4 w-4" /></Button>
             <Button onClick={() => openModal()}><Plus className="h-4 w-4" />Yeni Fırsat</Button>
@@ -235,7 +264,7 @@ export default function OpportunitiesPage() {
                     </div>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1 ${stageColors[o.stage] || 'bg-gray-100 text-gray-700'}`}>{WON_STAGES.includes(o.stage) && <Trophy className="h-3 w-3" />}{o.stage}</span>
                     </div>
-                    <div className="-mt-2 mb-2 flex justify-end"><BantBadge value={(o as any).qualification} />
+                    <div className="-mt-2 mb-2 flex justify-end gap-1">{discipline && !WON_STAGES.includes(o.stage) && !LOST_STAGES.includes(o.stage) && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{fcLabel((o as any).forecast_category)}</span>}<BantBadge value={(o as any).qualification} />
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
@@ -259,6 +288,10 @@ export default function OpportunitiesPage() {
                       <User className="h-3 w-3" />
                       {getAssignedName(o.assigned_to)}
                     </div>
+                    {discipline && staleSignals(o, o.customer_id ? (lastActivity[o.customer_id] ?? null) : undefined).map(sg => (
+                      <p key={sg} className="rounded bg-amber-50 px-2 py-0.5 text-[11px] text-amber-800">⚠ {sg}</p>
+                    ))}
+                    {(o as any).close_reason && <p className="text-[11px] text-slate-500">{LOST_STAGES.includes(o.stage) ? 'Kayıp' : 'Kazanma'} nedeni: {(o as any).close_reason}{(o as any).close_competitor_id ? ` · ${competitors.find(c => c.id === (o as any).close_competitor_id)?.name || ''}` : ''}</p>}
                   </div>
                   <div className="mt-3 flex items-center justify-end gap-1 border-t pt-3">
                     {!WON_STAGES.includes(o.stage) && !LOST_STAGES.includes(o.stage) && (
@@ -271,7 +304,7 @@ export default function OpportunitiesPage() {
                         <ShoppingCart className="h-4 w-4 text-green-600" /><span className="text-xs">Sipariş</span>
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" onClick={() => openModal(o)}><Edit2 className="h-4 w-4" /></Button>
+                    <a href={`/briefs?opportunity=${o.id}`} title="Görüşmeye hazırlan (yapay zekâ)" className="inline-flex h-8 items-center rounded-lg px-2 text-indigo-600 hover:bg-indigo-50"><Sparkles className="h-4 w-4" /></a><Button variant="ghost" size="sm" onClick={() => openModal(o)}><Edit2 className="h-4 w-4" /></Button>
                     <Button variant="ghost" size="sm" onClick={() => handleDelete(o.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
                   </div>
                 </CardBody>
@@ -302,6 +335,23 @@ export default function OpportunitiesPage() {
               options={STAGES.map(st => ({ value: st, label: st === 'Kazanıldı' ? 'Kazanıldı ✓' : st === 'Kaybedildi' ? 'Kaybedildi ✗' : st }))} />
             <Input label="Tahmini Kapanış" type="date" value={formData.expected_close} onChange={(e) => setFormData({ ...formData, expected_close: e.target.value })} />
           </div>
+          {discipline && !WON_STAGES.includes(formData.stage) && !LOST_STAGES.includes(formData.stage) && (
+            <div>
+              <Select label="Tahmin kategorisi (bu dönem kapanır mı?)" value={formData.forecast_category} onChange={(e) => setFormData({ ...formData, forecast_category: e.target.value })}
+                options={FORECAST_CATEGORIES.map(f => ({ value: f.value, label: `${f.label} — ${f.hint}` }))} />
+            </div>
+          )}
+          {discipline && (WON_STAGES.includes(formData.stage) || LOST_STAGES.includes(formData.stage)) && (
+            <div className={`space-y-3 rounded-lg border p-3 ${LOST_STAGES.includes(formData.stage) ? 'border-red-200 bg-red-50/50' : 'border-green-200 bg-green-50/50'}`}>
+              <div className="grid grid-cols-2 gap-4">
+                <Select label={LOST_STAGES.includes(formData.stage) ? 'Kayıp nedeni *' : 'Kazanma nedeni *'} value={formData.close_reason} onChange={(e) => setFormData({ ...formData, close_reason: e.target.value })}
+                  options={[{ value: '', label: 'Seçiniz' }, ...(LOST_STAGES.includes(formData.stage) ? LOSS_REASONS : WIN_REASONS).map(r => ({ value: r, label: r }))]} />
+                <Select label={LOST_STAGES.includes(formData.stage) ? 'Kaybedilen rakip' : 'Yenilen rakip'} value={formData.close_competitor_id} onChange={(e) => setFormData({ ...formData, close_competitor_id: e.target.value })}
+                  options={[{ value: '', label: 'Yok / bilinmiyor' }, ...competitors.map(c => ({ value: c.id, label: c.name }))]} />
+              </div>
+              <Input label="Ders / açıklama" value={formData.close_note} onChange={(e) => setFormData({ ...formData, close_note: e.target.value })} />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
             <Select label="Kaynak İş Ortağı" value={formData.referral_partner_id}
               onChange={(e) => setFormData({ ...formData, referral_partner_id: e.target.value, assigned_to: formData.assigned_to || e.target.value })}
