@@ -8,7 +8,7 @@ import Sidebar from '@/components/Sidebar';
 
 const publicRoutes = ['/login', '/register', '/portal/kayit'];
 // Giriş gerektirmeyen dış sayfalar (müşteriye giden online teklif)
-const isExternal = (p: string) => p.startsWith('/q/') || p.startsWith('/s/') || p.startsWith('/izin/');
+const isExternal = (p: string) => p.startsWith('/q/') || p.startsWith('/s/') || p.startsWith('/izin/') || p.startsWith('/f/');
 
 // Bayi portalı kullanıcısı mı? (oturum başına bir kez sorulur)
 let dealerCache: { uid: string; dealer: boolean } | null = null;
@@ -80,7 +80,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     <AuthProvider>
       <div className="flex bg-slate-100">
         <Sidebar />
-        <main className="flex-1 ml-56 min-h-screen">{children}</main>
+        <main className="flex-1 ml-56 min-h-screen min-w-0">{children}</main>
       </div>
     </AuthProvider>
   );

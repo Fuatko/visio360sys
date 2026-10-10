@@ -48,6 +48,7 @@ import {
   Factory,
   MapPinned,
   ShieldCheck,
+  Coffee,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -79,6 +80,7 @@ const salesItems = [
   { href: '/contracts', label: 'Sözleşmeler', icon: ScrollText },
   { href: '/collections', label: 'Tahsilat', icon: Wallet },
   { href: '/dealers', label: 'Bayi Yönetimi', icon: Store },
+  { href: '/franchise', label: 'Franchise & Şube Ağı', icon: Coffee },
   { href: '/suppliers', label: 'Ana Firmalarım', icon: Factory },
   { href: '/profitability', label: 'Kârlılık (Net Kâr)', icon: Calculator },
 ];

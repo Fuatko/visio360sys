@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import {
   LayoutDashboard, ShoppingCart, Package, Wallet, Trophy, ShieldCheck, UserPlus, BarChart3,
-  LifeBuoy, Megaphone, GraduationCap, Bell, UserCog, LogOut, Menu, X, Store,
+  LifeBuoy, Megaphone, GraduationCap, Bell, UserCog, LogOut, Menu, X, Store, Receipt, ClipboardCheck,
 } from 'lucide-react';
 
 export interface PortalMe {
@@ -55,6 +55,8 @@ const MENU = [
   { href: '/portal/satis-stok', label: 'Satış, Stok & Tahmin', icon: BarChart3 },
   { href: '/portal/talepler', label: 'Garanti, İade & Destek', icon: LifeBuoy, count: 'tickets' },
   { href: '/portal/pazarlama', label: 'Pazarlama Fonu', icon: Megaphone },
+  { href: '/portal/ciro', label: 'Ciro Bildirimi & Royalty', icon: Receipt, show: 'royalty', count: 'royalty' },
+  { href: '/portal/denetimler', label: 'Denetim & Standartlar', icon: ClipboardCheck, show: 'audits', count: 'actions' },
   { href: '/portal/egitim', label: 'Eğitim & Sertifika', icon: GraduationCap },
   { href: '/portal/duyurular', label: 'Duyurular & Dokümanlar', icon: Bell, count: 'announcements' },
   { href: '/portal/hesap', label: 'Hesabım & Ekibim', icon: UserCog },
@@ -68,6 +70,7 @@ export default function PortalShell({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [features, setFeatures] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
 
   const reloadMe = useCallback(async () => {
@@ -77,17 +80,29 @@ export default function PortalShell({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshCounts = useCallback(async () => {
-    const [ann, reads, leads, tickets] = await Promise.all([
+    const [ann, reads, leads, tickets, aud, roy] = await Promise.all([
       supabase.from('portal_announcements').select('id'),
       supabase.from('portal_announcement_reads').select('announcement_id'),
       supabase.from('dealer_lead_assignments').select('id', { count: 'exact', head: true }).eq('status', 'assigned'),
       supabase.from('dealer_tickets').select('id', { count: 'exact', head: true }).eq('status', 'waiting_dealer'),
+      supabase.rpc('portal_audits'),
+      supabase.rpc('portal_royalty'),
     ]);
+    // Franchise menüleri yalnızca ilgili kayıt varsa görünür
+    const audits = aud.error ? null : aud.data;
+    const royalty = roy.error ? null : roy.data;
+    const lastMonth = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; })();
+    setFeatures({
+      audits: !!audits && ((audits.audits || []).length > 0 || (audits.actions || []).length > 0),
+      royalty: !!royalty?.agreement,
+    });
     const readSet = new Set((reads.data || []).map((r: any) => r.announcement_id));
     setCounts({
       announcements: (ann.data || []).filter((a: any) => !readSet.has(a.id)).length,
       leads: leads.count || 0,
       tickets: tickets.count || 0,
+      actions: (audits?.actions || []).filter((a: any) => a.status === 'open').length,
+      royalty: royalty?.agreement && !(royalty.reports || []).some((r: any) => String(r.period).slice(0, 10) === lastMonth && r.status !== 'rejected') ? 1 : 0,
     });
   }, []);
 
@@ -147,7 +162,7 @@ export default function PortalShell({ children }: { children: ReactNode }) {
 
   const nav = (
     <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-      {MENU.map(m => {
+      {(MENU as { href: string; label: string; icon: any; count?: string; show?: string }[]).filter(m => !m.show || features[m.show]).map(m => {
         const active = m.href === '/portal' ? pathname === '/portal' : pathname.startsWith(m.href);
         const c = m.count ? counts[m.count] : 0;
         return (

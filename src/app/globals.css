@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Tailwind v4: renk verilmeyen kenarlıklar siyah yerine açık gri olsun (v3 davranışı) */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button {
+    border-color: var(--color-slate-200, currentColor);
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

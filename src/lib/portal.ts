@@ -129,3 +129,21 @@ export async function openPortalFile(supabase: any, value: string) {
 
 export const fileLabel = (value: string) =>
   value.startsWith(STORAGE_PREFIX) ? value.split('/').pop()?.replace(/^\d+_/, '') || 'Dosya' : 'Bağlantı';
+
+/** Hazır bir dosyayı (ör. küçültülmüş fotoğraf) belirli bir yola yükler */
+export async function uploadPortalBlob(supabase: any, path: string, blob: Blob, contentType = 'image/jpeg'): Promise<string> {
+  const { error } = await supabase.storage.from(BUCKET).upload(path, blob, { upsert: false, contentType });
+  if (error) throw new Error('Dosya yüklenemedi: ' + error.message);
+  return STORAGE_PREFIX + path;
+}
+
+/** Depodaki dosyalar için toplu, süreli görüntüleme bağlantısı */
+export async function signedPortalUrls(supabase: any, values: string[], seconds = 3600): Promise<Record<string, string>> {
+  const paths = values.filter(v => v?.startsWith(STORAGE_PREFIX)).map(v => v.slice(STORAGE_PREFIX.length));
+  const out: Record<string, string> = {};
+  values.filter(v => v && !v.startsWith(STORAGE_PREFIX)).forEach(v => { out[v] = v; });
+  if (!paths.length) return out;
+  const { data } = await supabase.storage.from(BUCKET).createSignedUrls(paths, seconds);
+  (data || []).forEach((d: any) => { if (d.signedUrl) out[STORAGE_PREFIX + d.path] = d.signedUrl; });
+  return out;
+}
