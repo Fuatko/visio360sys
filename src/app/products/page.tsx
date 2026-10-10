@@ -60,6 +60,7 @@ export default function ProductsPage() {
     currency: 'TRY',
     tax_rate: 20,
     status: 'active',
+    cost_price: '' as any,
   });
 
   const supabase = createClient();
@@ -96,6 +97,7 @@ export default function ProductsPage() {
         currency: product.currency || 'TRY',
         tax_rate: product.tax_rate || 20,
         status: product.status || 'active',
+        cost_price: (product as any).cost_price ?? '',
       });
     } else {
       setEditingProduct(null);
@@ -109,6 +111,7 @@ export default function ProductsPage() {
         currency: 'TRY',
         tax_rate: 20,
         status: 'active',
+        cost_price: '' as any,
       });
     }
     setModalOpen(true);
@@ -122,16 +125,20 @@ export default function ProductsPage() {
 
     setSaving(true);
     try {
+      const { cost_price, ...rest } = formData as any;
+      // Maliyet alanı (teklif-onay.sql) kurulu değilse dokunma
+      const payload: any = (cost_price !== '' && cost_price !== null) || (editingProduct as any)?.cost_price != null
+        ? { ...rest, cost_price: cost_price === '' ? null : Number(cost_price) } : rest;
       if (editingProduct) {
         const { error } = await supabase
           .from('products')
-          .update(cleanPayload(formData))
+          .update(cleanPayload(payload))
           .eq('id', editingProduct.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('products')
-          .insert(cleanPayload([formData]));
+          .insert(cleanPayload([payload]));
         if (error) throw error;
       }
       setModalOpen(false);
@@ -410,6 +417,16 @@ export default function ProductsPage() {
               onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
               options={units}
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Birim maliyet (KDV hariç, iç kullanım)" type="number" value={(formData as any).cost_price}
+              onChange={(e) => setFormData({ ...formData, cost_price: e.target.value } as any)} />
+            <div className="flex items-end pb-2 text-sm text-slate-600">
+              {(formData as any).cost_price !== '' && Number(formData.price) > 0
+                ? <>Brüt marj: <b className="ml-1">%{(((Number(formData.price) - Number((formData as any).cost_price)) / Number(formData.price)) * 100).toFixed(1)}</b></>
+                : <span className="text-xs text-slate-400">Maliyet girilirse teklif onayında marj kontrol edilir; müşteri görmez.</span>}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

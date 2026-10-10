@@ -3,7 +3,7 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
-import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target, ClipboardCheck, GitBranch, History, ShieldCheck } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target, ClipboardCheck, GitBranch, History, ShieldCheck, Link2, Copy, MessageCircle, Mail, Settings2, ExternalLink } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -12,6 +12,7 @@ import { nextDocumentNumber } from '@/lib/doc-number';
 import { useDealerPricing } from '@/lib/use-dealer-pricing';
 import DealerTermBar from '@/components/DealerTermBar';
 import { useAuth } from '@/lib/auth-context';
+import { evaluateQuote, APPROVAL_STATUS, CUSTOMER_RESPONSE, QuotePolicy, DEFAULT_POLICY } from '@/lib/quote-approval';
 
 // ISO 9001 madde 8.2.3: teklif müşteriye taahhüt edilmeden önce gözden geçirilir
 const REVIEW_CHECKLIST = [
@@ -110,6 +111,12 @@ export default function QuotesPage() {
   const [selectedQuote, setSelectedQuote] = useState<Quote | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [policy, setPolicy] = useState<QuotePolicy & { id?: string }>(DEFAULT_POLICY);
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [approvalReady, setApprovalReady] = useState(false);   // teklif-onay.sql kurulu mu
+  const [reviewItems, setReviewItems] = useState<any[]>([]);
+  const [shareTarget, setShareTarget] = useState<any | null>(null);
+  const [onlyPending, setOnlyPending] = useState(false);
   
   const [formData, setFormData] = useState({
     customer_id: '',
@@ -159,8 +166,14 @@ export default function QuotesPage() {
       const [quotesRes, customersRes, productsRes] = await Promise.all([
         supabase.from('quotes').select('*').order('created_at', { ascending: false }),
         supabase.from('customers').select('id, name').order('name'),
-        supabase.from('products').select('id, name, price, tax_rate, unit').eq('status', 'active'),
+        supabase.from('products').select('*').eq('status', 'active'),
       ]);
+      const [probe, pol] = await Promise.all([
+        supabase.from('quotes').select('approval_status').limit(1),
+        supabase.from('quote_policies').select('*').maybeSingle(),
+      ]);
+      setApprovalReady(!probe.error);
+      if (pol.data) setPolicy(pol.data);
       
       const custs = customersRes.data || [];
       setQuotes((quotesRes.data || []).map((q: any) => ({ ...q, customer: custs.find((c: any) => c.id === q.customer_id) || null })));
@@ -214,7 +227,10 @@ export default function QuotesPage() {
   };
 
   // ---------- ISO 8.2.3: Gözden geçirme ----------
-  const openReview = (q: Quote) => {
+  const openReview = async (q: Quote) => {
+    setReviewItems([]);
+    const { data } = await supabase.from('quote_items').select('*').eq('quote_id', q.id);
+    setReviewItems(data || []);
     setReviewTarget(q);
     setReviewChecks({});
     setReviewNotes('');
@@ -222,25 +238,39 @@ export default function QuotesPage() {
 
   const isManagerRole = ['super_admin', 'admin', 'org_admin', 'manager'].includes((profile as any)?.role || '') || !!(profile as any)?.is_org_admin;
 
+  const reviewEval = reviewTarget ? evaluateQuote(reviewItems, reviewTarget.discount, products as any[], reviewTarget.total, policy) : null;
+  const needsApproval = !!(approvalReady && reviewEval && reviewEval.reasons.length > 0 && (reviewTarget as any)?.approval_status !== 'approved');
+
   const submitReview = async () => {
     if (!reviewTarget) return;
     const allChecked = REVIEW_CHECKLIST.every(c => reviewChecks[c.key]);
     if (!allChecked) { alert('Gözden geçirmeyi tamamlamak için tüm maddeler onaylanmalıdır.'); return; }
-    if (Number(reviewTarget.discount) > DISCOUNT_APPROVAL_LIMIT && !isManagerRole) {
+    if (!approvalReady && Number(reviewTarget.discount) > DISCOUNT_APPROVAL_LIMIT && !isManagerRole) {
       alert(`%${DISCOUNT_APPROVAL_LIMIT} üzeri iskonto yönetici onayı gerektirir. Gözden geçirmeyi bir yönetici yapmalıdır.`);
       return;
     }
     setSaving(true);
     try {
-      const { error } = await supabase.from('quotes').update({
-        status: 'reviewed',
-        reviewed_by: (profile as any)?.id || null,
-        reviewed_by_name: (profile as any)?.name || (profile as any)?.email || null,
-        reviewed_at: new Date().toISOString(),
-        review_checklist: reviewChecks,
-        review_notes: reviewNotes || null,
-      }).eq('id', reviewTarget.id);
+      const me = { id: (profile as any)?.id || null, name: (profile as any)?.name || (profile as any)?.email || null };
+      const metrics: any = approvalReady && reviewEval ? {
+        margin_pct: reviewEval.marginPct === null ? null : Math.round(reviewEval.marginPct * 100) / 100,
+        effective_discount_pct: Math.round(reviewEval.effectiveDiscount * 100) / 100,
+      } : {};
+      let patch: any;
+      if (needsApproval && !isManagerRole) {
+        // Temsilci: yönetici onayına gönder (teklif taslakta kalır)
+        patch = { ...metrics, approval_status: 'pending', approval_reasons: reviewEval!.reasons.join(' · '),
+          approval_requested_by: me.id, approval_requested_at: new Date().toISOString(), approval_note: null,
+          review_checklist: reviewChecks, review_notes: reviewNotes || null };
+      } else {
+        patch = { ...metrics, status: 'reviewed', reviewed_by: me.id, reviewed_by_name: me.name, reviewed_at: new Date().toISOString(),
+          review_checklist: reviewChecks, review_notes: reviewNotes || null };
+        if (needsApproval && isManagerRole) Object.assign(patch, { approval_status: 'approved', approval_reasons: reviewEval!.reasons.join(' · '),
+          approved_by_name: me.name, approval_decided_at: new Date().toISOString() });
+      }
+      const { error } = await supabase.from('quotes').update(patch).eq('id', reviewTarget.id);
       if (error) throw error;
+      if (patch.approval_status === 'pending') alert('Teklif yönetici onayına gönderildi. Onaylanınca müşteriye gönderebilirsiniz.');
       setReviewTarget(null);
       fetchData();
     } catch (err: any) {
@@ -248,6 +278,45 @@ export default function QuotesPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  // ---------- Yönetici onayı ----------
+  const decideApproval = async (q: any, ok: boolean) => {
+    const note = ok ? (prompt('Onay notu (isteğe bağlı):') ?? '') : prompt('Ret nedeni (temsilci görecek):');
+    if (!ok && !note) return;
+    const me = (profile as any)?.name || (profile as any)?.email || null;
+    const patch: any = ok
+      ? { approval_status: 'approved', approved_by_name: me, approval_decided_at: new Date().toISOString(), approval_note: note || null,
+          status: 'reviewed', reviewed_by: (profile as any)?.id || null, reviewed_by_name: me, reviewed_at: new Date().toISOString() }
+      : { approval_status: 'rejected', approved_by_name: me, approval_decided_at: new Date().toISOString(), approval_note: note };
+    const { error } = await supabase.from('quotes').update(patch).eq('id', q.id);
+    if (error) alert(error.message); else fetchData();
+  };
+
+  // ---------- Online teklif ----------
+  const shareQuote = async (q: any) => {
+    let token = q.share_token;
+    if (!token || q.status === 'reviewed') {
+      token = token || crypto.randomUUID();
+      const patch: any = { share_token: token, shared_at: new Date().toISOString() };
+      if (q.status === 'reviewed') { patch.status = 'sent'; patch.sent_at = new Date().toISOString(); }
+      const { error } = await supabase.from('quotes').update(patch).eq('id', q.id);
+      if (error) { alert('Bağlantı oluşturulamadı: ' + error.message); return; }
+      fetchData();
+    }
+    setShareTarget({ ...q, share_token: token, url: `${window.location.origin}/q/${token}` });
+  };
+
+  const savePolicy = async () => {
+    const payload = { max_discount_pct: policy.max_discount_pct === null || (policy.max_discount_pct as any) === '' ? null : Number(policy.max_discount_pct),
+      min_margin_pct: policy.min_margin_pct === null || (policy.min_margin_pct as any) === '' ? null : Number(policy.min_margin_pct),
+      max_total_without_approval: policy.max_total_without_approval === null || (policy.max_total_without_approval as any) === '' ? null : Number(policy.max_total_without_approval),
+      updated_at: new Date().toISOString() };
+    const { data, error } = policy.id
+      ? await supabase.from('quote_policies').update(payload).eq('id', policy.id).select().single()
+      : await supabase.from('quote_policies').insert([payload]).select().single();
+    if (error) { alert(error.message); return; }
+    setPolicy(data); setPolicyOpen(false);
   };
 
   // ---------- ISO 7.5.3: Revizyon ----------
@@ -478,7 +547,8 @@ export default function QuotesPage() {
     const matchSearch = quoteNo(q).toLowerCase().includes(searchTerm.toLowerCase()) ||
                        q.customer?.name?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchStatus = !filterStatus || q.status === filterStatus;
-    return matchSearch && matchStatus;
+    const matchPending = !onlyPending || (q as any).approval_status === 'pending';
+    return matchSearch && matchStatus && matchPending;
   });
 
   // İstatistikler
@@ -577,7 +647,18 @@ export default function QuotesPage() {
               ))}
             </select>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {approvalReady && (() => {
+              const pend = quotes.filter((q: any) => q.approval_status === 'pending').length;
+              return pend > 0 ? (
+                <button onClick={() => setOnlyPending(!onlyPending)} className={`rounded-full px-3 py-1.5 text-xs font-medium ${onlyPending ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-800'}`}>
+                  Onay bekleyen: {pend}
+                </button>
+              ) : null;
+            })()}
+            {approvalReady && isManagerRole && (
+              <Button variant="secondary" onClick={() => setPolicyOpen(true)} title="Onay kuralları"><Settings2 className="h-4 w-4" /></Button>
+            )}
             <Button variant="secondary" onClick={fetchData}>
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -616,6 +697,12 @@ export default function QuotesPage() {
                               <ShieldCheck className="h-3 w-3" />Gözden geçirildi
                             </div>
                           )}
+                          {(quote as any).approval_status && (quote as any).approval_status !== 'not_required' && (
+                            <div className="mt-1"><Badge variant={APPROVAL_STATUS[(quote as any).approval_status]?.variant || 'default'} className="text-[10px]" >{APPROVAL_STATUS[(quote as any).approval_status]?.label}</Badge>
+                              {(quote as any).approval_status !== 'approved' && (quote as any).approval_reasons && <p className="mt-0.5 max-w-[220px] text-[10px] text-amber-700">{(quote as any).approval_reasons}</p>}
+                              {(quote as any).approval_status === 'rejected' && (quote as any).approval_note && <p className="mt-0.5 max-w-[220px] text-[10px] text-red-600">Not: {(quote as any).approval_note}</p>}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 font-medium">{customers.find(c => c.id === quote.customer_id)?.name || '-'}</td>
                         <td className="px-4 py-3 text-slate-600">
@@ -627,6 +714,14 @@ export default function QuotesPage() {
                           <Badge variant={statusConfig[quote.status]?.variant || 'default'}>
                             {statusConfig[quote.status]?.label || quote.status}
                           </Badge>
+                          {(quote as any).customer_response && (
+                            <div className="mt-1"><Badge variant={CUSTOMER_RESPONSE[(quote as any).customer_response]?.variant} className="text-[10px]">{CUSTOMER_RESPONSE[(quote as any).customer_response]?.label}</Badge></div>
+                          )}
+                          {(quote as any).share_token && (
+                            <div className="mt-1 text-[10px] text-slate-500" title={(quote as any).last_viewed_at ? `Son görüntüleme: ${new Date((quote as any).last_viewed_at).toLocaleString('tr-TR')}` : 'Henüz açılmadı'}>
+                              <Eye className="inline h-3 w-3" /> {(quote as any).view_count ? `${(quote as any).view_count} kez görüntülendi` : 'Henüz açılmadı'}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-center text-slate-500 text-xs">
                           {formatDate(quote.valid_until)}
@@ -636,9 +731,20 @@ export default function QuotesPage() {
                             <Button variant="ghost" size="sm" onClick={() => viewQuote(quote)} title="Görüntüle">
                               <Eye className="h-4 w-4" />
                             </Button>
-                            {quote.status === 'draft' && (
+                            {quote.status === 'draft' && (quote as any).approval_status === 'pending' && isManagerRole && (
+                              <>
+                                <Button variant="ghost" size="sm" onClick={() => decideApproval(quote, true)} title="Yönetici onayı ver"><CheckCircle className="h-4 w-4 text-green-600" /><span className="text-xs">Onayla</span></Button>
+                                <Button variant="ghost" size="sm" onClick={() => decideApproval(quote, false)} title="Onayı reddet"><XCircle className="h-4 w-4 text-red-500" /></Button>
+                              </>
+                            )}
+                            {quote.status === 'draft' && (quote as any).approval_status !== 'pending' && (
                               <Button variant="ghost" size="sm" onClick={() => openReview(quote)} title="Gözden geçir (ISO 9001 · 8.2.3)">
                                 <ClipboardCheck className="h-4 w-4 text-amber-600" /><span className="text-xs">Gözden Geçir</span>
+                              </Button>
+                            )}
+                            {approvalReady && ['reviewed', 'sent'].includes(quote.status) && (
+                              <Button variant="ghost" size="sm" onClick={() => shareQuote(quote)} title="Müşteriye online teklif bağlantısı gönder">
+                                <Link2 className="h-4 w-4 text-indigo-600" /><span className="text-xs">Online</span>
                               </Button>
                             )}
                             {quote.status === 'reviewed' && (
@@ -902,6 +1008,14 @@ export default function QuotesPage() {
               <p className="font-semibold text-lg">{selectedQuote.customer?.name}</p>
               {selectedQuote.subject && <p className="text-slate-600">{selectedQuote.subject}</p>}
             </div>
+            {(selectedQuote as any).customer_response && (
+              <div className={`rounded-lg border p-3 text-sm ${(selectedQuote as any).customer_response === 'accepted' ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+                <p className="font-semibold">{CUSTOMER_RESPONSE[(selectedQuote as any).customer_response]?.label}</p>
+                <p>{(selectedQuote as any).customer_signer_name}{(selectedQuote as any).customer_signer_title ? ` — ${(selectedQuote as any).customer_signer_title}` : ''} · {new Date((selectedQuote as any).customer_response_at).toLocaleString('tr-TR')}</p>
+                {(selectedQuote as any).customer_note && <p className="mt-1 text-slate-600">“{(selectedQuote as any).customer_note}”</p>}
+                {(selectedQuote as any).customer_response_meta?.ip && <p className="mt-1 text-[11px] text-slate-500">Kayıt: IP {(selectedQuote as any).customer_response_meta.ip}</p>}
+              </div>
+            )}
 
             {/* Kalemler */}
             <div>
@@ -1016,7 +1130,7 @@ export default function QuotesPage() {
           <>
             <Button variant="secondary" onClick={() => setReviewTarget(null)}>Vazgeç</Button>
             <Button onClick={submitReview} disabled={saving || !REVIEW_CHECKLIST.every(c => reviewChecks[c.key])}>
-              <ShieldCheck className="h-4 w-4" />Gözden Geçirmeyi Onayla
+              <ShieldCheck className="h-4 w-4" />{needsApproval && !isManagerRole ? 'Yönetici Onayına Gönder' : 'Gözden Geçirmeyi Onayla'}
             </Button>
           </>
         }
@@ -1033,10 +1147,30 @@ export default function QuotesPage() {
               <div className="flex justify-between"><span className="text-slate-500">Genel Toplam</span><span className="font-medium">₺{formatMoney(reviewTarget.total)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Genel İskonto</span><span className="font-medium">%{reviewTarget.discount || 0}</span></div>
             </div>
-            {Number(reviewTarget.discount) > DISCOUNT_APPROVAL_LIMIT && (
+            {!approvalReady && Number(reviewTarget.discount) > DISCOUNT_APPROVAL_LIMIT && (
               <div className={`rounded-lg border p-3 ${isManagerRole ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-red-200 bg-red-50 text-red-700'}`}>
                 İskonto %{DISCOUNT_APPROVAL_LIMIT}'nin üzerinde; yönetici onayı gerekir.
                 {isManagerRole ? ' Yönetici olarak onaylıyorsunuz.' : ' Bu gözden geçirmeyi bir yönetici yapmalıdır.'}
+              </div>
+            )}
+            {approvalReady && reviewEval && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-slate-50 p-2"><p className="text-[11px] text-slate-500">Liste toplamı</p><p className="font-semibold">₺{formatMoney(reviewEval.listTotal)}</p></div>
+                  <div className="rounded-lg bg-slate-50 p-2"><p className="text-[11px] text-slate-500">Toplam iskonto</p><p className="font-semibold">%{reviewEval.effectiveDiscount.toFixed(1)}</p></div>
+                  <div className="rounded-lg bg-slate-50 p-2"><p className="text-[11px] text-slate-500">Brüt marj</p>
+                    <p className={`font-semibold ${reviewEval.marginPct !== null && policy.min_margin_pct !== null && reviewEval.marginPct < Number(policy.min_margin_pct) ? 'text-red-600' : 'text-green-700'}`}>{reviewEval.marginPct === null ? '—' : `%${reviewEval.marginPct.toFixed(1)}`}</p>
+                    {reviewEval.missingCost > 0 && <p className="text-[10px] text-slate-400">{reviewEval.missingCost} kalemde maliyet yok</p>}</div>
+                </div>
+                {needsApproval ? (
+                  <div className={`rounded-lg border p-3 ${isManagerRole ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-red-200 bg-red-50 text-red-700'}`}>
+                    <p className="font-medium">Yönetici onayı gerekiyor:</p>
+                    <ul className="list-disc pl-5">{reviewEval.reasons.map(r => <li key={r}>{r}</li>)}</ul>
+                    <p className="mt-1 text-xs">{isManagerRole ? 'Yönetici olarak onaylayıp gözden geçirmeyi tamamlıyorsunuz.' : 'Kaydettiğinizde teklif yönetici onayına gider.'}</p>
+                  </div>
+                ) : (reviewTarget as any).approval_status === 'approved' ? (
+                  <p className="rounded-lg bg-green-50 p-2 text-xs text-green-800">Yönetici onayı alınmış ({(reviewTarget as any).approved_by_name}).</p>
+                ) : <p className="rounded-lg bg-green-50 p-2 text-xs text-green-800">Teklif onay kuralları içinde.</p>}
               </div>
             )}
             <div className="space-y-2">
@@ -1051,6 +1185,36 @@ export default function QuotesPage() {
             <Textarea label="Gözden geçirme notu (opsiyonel)" value={reviewNotes} onChange={(e) => setReviewNotes(e.target.value)} rows={2} />
           </div>
         )}
+      </Modal>
+      <Modal isOpen={!!shareTarget} onClose={() => setShareTarget(null)} title="Online teklif bağlantısı">
+        {shareTarget && (
+          <div className="space-y-3 text-sm">
+            <p className="text-slate-600">Müşteriniz bu bağlantıdan teklifi görüntüler, <b>online kabul eder</b>, revizyon ister veya reddeder. Ne zaman ve kaç kez açtığını görürsünüz.</p>
+            <div className="flex gap-2">
+              <input readOnly value={shareTarget.url} className="flex-1 rounded-lg border bg-slate-50 px-2 py-2 text-xs" onFocus={e => e.target.select()} />
+              <Button size="sm" onClick={() => { navigator.clipboard?.writeText(shareTarget.url); alert('Bağlantı kopyalandı.'); }}><Copy className="h-3 w-3" />Kopyala</Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <a target="_blank" rel="noopener" className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-2 text-white"
+                href={`https://wa.me/?text=${encodeURIComponent(`Merhaba, ${quoteNo(shareTarget)} numaralı teklifimizi aşağıdaki bağlantıdan inceleyip online onaylayabilirsiniz:\n${shareTarget.url}`)}`}><MessageCircle className="h-4 w-4" />WhatsApp</a>
+              <a className="inline-flex items-center gap-1 rounded-lg border px-3 py-2"
+                href={`mailto:?subject=${encodeURIComponent(`Teklifimiz: ${quoteNo(shareTarget)} ${shareTarget.subject || ''}`)}&body=${encodeURIComponent(`Merhaba,\n\n${quoteNo(shareTarget)} numaralı teklifimizi aşağıdaki bağlantıdan inceleyip online onaylayabilirsiniz:\n${shareTarget.url}\n\nSaygılarımızla`)}`}><Mail className="h-4 w-4" />E-posta</a>
+              <a target="_blank" rel="noopener" className="inline-flex items-center gap-1 rounded-lg border px-3 py-2" href={`${shareTarget.url}?preview=1`}><ExternalLink className="h-4 w-4" />Önizle</a>
+            </div>
+            <p className="text-[11px] text-slate-400">Önizleme görüntülenme sayısına eklenmez. Teklif değiştirilecekse revizyon oluşturun; eski bağlantı yeni sürüme yönlendirir.</p>
+          </div>
+        )}
+      </Modal>
+
+      <Modal isOpen={policyOpen} onClose={() => setPolicyOpen(false)} title="Teklif onay kuralları"
+        footer={<><Button variant="secondary" onClick={() => setPolicyOpen(false)}>İptal</Button><Button onClick={savePolicy}>Kaydet</Button></>}>
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Aşağıdaki sınırlardan biri aşılırsa temsilci teklifi gönderemez; teklif yönetici onayına düşer. Boş bırakılan kural uygulanmaz.</p>
+          <Input label="Toplam iskonto üst sınırı (%)" type="number" value={(policy.max_discount_pct ?? '') as any} onChange={e => setPolicy({ ...policy, max_discount_pct: e.target.value as any })} />
+          <Input label="Brüt marj alt sınırı (%) — ürün maliyeti girilmişse" type="number" value={(policy.min_margin_pct ?? '') as any} onChange={e => setPolicy({ ...policy, min_margin_pct: e.target.value as any })} />
+          <Input label="Onaysız teklif tutar sınırı (₺, KDV dahil)" type="number" value={(policy.max_total_without_approval ?? '') as any} onChange={e => setPolicy({ ...policy, max_total_without_approval: e.target.value as any })} />
+          <p className="text-xs text-slate-500">Ürün maliyetleri Ürün Kataloğu'nda "Birim maliyet" alanından girilir.</p>
+        </div>
       </Modal>
     </div>
   );

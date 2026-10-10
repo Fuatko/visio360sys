@@ -7,6 +7,8 @@ import { AuthProvider } from '@/lib/auth-context';
 import Sidebar from '@/components/Sidebar';
 
 const publicRoutes = ['/login', '/register', '/portal/kayit'];
+// Giriş gerektirmeyen dış sayfalar (müşteriye giden online teklif)
+const isExternal = (p: string) => p.startsWith('/q/');
 
 // Bayi portalı kullanıcısı mı? (oturum başına bir kez sorulur)
 let dealerCache: { uid: string; dealer: boolean } | null = null;
@@ -27,6 +29,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const checkAuth = async () => {
+      if (isExternal(pathname)) { setLoading(false); return; }
       const { data: { session } } = await supabase.auth.getSession();
       
       const isPortal = pathname.startsWith('/portal');
@@ -47,6 +50,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session) dealerCache = null;
+      if (isExternal(pathname)) return;
       if (!session && !publicRoutes.includes(pathname)) {
         router.push(pathname.startsWith('/portal') ? '/login?portal=1' : '/login');
       } else {
@@ -68,7 +72,7 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     );
   }
 
-  if (publicRoutes.includes(pathname) || pathname.startsWith('/portal')) {
+  if (publicRoutes.includes(pathname) || pathname.startsWith('/portal') || isExternal(pathname)) {
     return <>{children}</>;
   }
 
