@@ -10,6 +10,8 @@ import { useRouter } from 'next/navigation';
 import { createOrderFromQuote } from '@/lib/sales-flow';
 import { nextDocumentNumber } from '@/lib/doc-number';
 import { useDealerPricing } from '@/lib/use-dealer-pricing';
+import { readSignal } from '@/lib/quote-engagement';
+import QuoteViewHistory from '@/components/quotes/QuoteViewHistory';
 import DealerTermBar from '@/components/DealerTermBar';
 import { useAuth } from '@/lib/auth-context';
 import { CURRENCIES, CUR_LABEL, money, getRates, convert, toTry, FxRates } from '@/lib/fx';
@@ -748,9 +750,8 @@ export default function QuotesPage() {
                             <div className="mt-1"><Badge variant={CUSTOMER_RESPONSE[(quote as any).customer_response]?.variant} className="text-[10px]">{CUSTOMER_RESPONSE[(quote as any).customer_response]?.label}</Badge></div>
                           )}
                           {(quote as any).share_token && (
-                            <div className="mt-1 text-[10px] text-slate-500" title={(quote as any).last_viewed_at ? `Son görüntüleme: ${new Date((quote as any).last_viewed_at).toLocaleString('tr-TR')}` : 'Henüz açılmadı'}>
-                              <Eye className="inline h-3 w-3" /> {(quote as any).view_count ? `${(quote as any).view_count} kez görüntülendi` : 'Henüz açılmadı'}
-                            </div>
+                            (() => { const sg = readSignal(quote)!; const c = { success: 'text-green-700 font-medium', danger: 'text-red-600 font-medium', warning: 'text-amber-700', info: 'text-indigo-700', default: 'text-slate-500' }[sg.tone];
+                              return <div className={`mt-1 text-[10px] ${c}`} title={`${sg.hint}${(quote as any).last_viewed_at ? `\nSon görüntüleme: ${new Date((quote as any).last_viewed_at).toLocaleString('tr-TR')}` : ''}`}><Eye className="inline h-3 w-3" /> {sg.label}</div>; })()
                           )}
                         </td>
                         <td className="px-4 py-3 text-center text-slate-500 text-xs">
@@ -1067,6 +1068,8 @@ export default function QuotesPage() {
                 {(selectedQuote as any).customer_response_meta?.ip && <p className="mt-1 text-[11px] text-slate-500">Kayıt: IP {(selectedQuote as any).customer_response_meta.ip}</p>}
               </div>
             )}
+
+            <QuoteViewHistory quote={selectedQuote} />
 
             {/* Kalemler */}
             <div>

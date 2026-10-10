@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
 import { CheckCircle2, XCircle, MessageSquare, Printer, Phone, Mail, Clock, FileText, AlertTriangle } from 'lucide-react';
@@ -20,6 +20,51 @@ export default function PublicQuotePage() {
   const [form, setForm] = useState({ name: '', title: '', note: '', agree: false });
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const viewId = useRef<string | null>(null);
+  const printed = useRef(false);
+
+  // Okuma takibi: yalnızca sekme görünürken geçen süre ve en fazla kaydırma oranı
+  useEffect(() => {
+    if (!q?.view_id) return;
+    viewId.current = q.view_id;
+    let secs = 0, scroll = 0, lastSent = '';
+    const measure = () => {
+      const el = document.documentElement;
+      const max = el.scrollHeight - window.innerHeight;
+      const pct = max <= 0 ? 100 : Math.round(((window.scrollY || el.scrollTop) / max) * 100);
+      scroll = Math.max(scroll, Math.min(100, pct));
+    };
+    const send = (beacon = false) => {
+      const key = `${secs}|${scroll}|${printed.current}`;
+      if (key === lastSent || !viewId.current) return;
+      lastSent = key;
+      const body = { p_token: token, p_view_id: viewId.current, p_seconds: secs, p_scroll: scroll, p_printed: printed.current };
+      if (beacon) {
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key2 = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        try {
+          fetch(`${url}/rest/v1/rpc/public_quote_engage`, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', apikey: key2!, Authorization: `Bearer ${key2}` }, body: JSON.stringify(body) });
+        } catch { /* sayfa kapanıyor */ }
+      } else supabase.rpc('public_quote_engage', body).then(() => {});
+    };
+    measure();
+    const tick = setInterval(() => { if (document.visibilityState === 'visible') secs += 1; }, 1000);
+    const flush = setInterval(() => send(), 15000);
+    const first = setTimeout(() => send(), 5000);
+    const onHide = () => { if (document.visibilityState === 'hidden') send(true); };
+    const onPageHide = () => send(true);
+    const onPrint = () => { printed.current = true; send(); };
+    window.addEventListener('scroll', measure, { passive: true });
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeprint', onPrint);
+    return () => {
+      clearInterval(tick); clearInterval(flush); clearTimeout(first);
+      window.removeEventListener('scroll', measure);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeprint', onPrint);
+    };
+  }, [q?.view_id]);
 
   const load = async (track: boolean) => {
     const { data, error } = await supabase.rpc('public_quote_get', { p_token: token, p_track: track });
@@ -27,7 +72,7 @@ export default function PublicQuotePage() {
       const { data: c } = await supabase.rpc('public_quote_currency', { p_token: token });
       if (c) { CUR = c.currency || 'TRY'; setFxInfo(c); }
     }
-    setQ(error ? null : data);
+    setQ(error ? null : data && !data.view_id && viewId.current ? { ...data, view_id: viewId.current } : data);
   };
   useEffect(() => {
     const preview = new URLSearchParams(window.location.search).get('preview') === '1';
