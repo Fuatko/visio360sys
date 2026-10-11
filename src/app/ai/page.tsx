@@ -19,7 +19,7 @@ interface Message {
 export default function AIPage() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: 'Merhaba! Ben Satış Pro AI Asistanınızım. Size satış süreçleriniz hakkında yardımcı olabilirim. Aşağıdaki önerilerden birini seçin veya sorunuzu yazın.' }
+    { role: 'assistant', content: 'Merhaba! Ben Inspira360 Revenue AI Asistanınızım. Size satış süreçleriniz hakkında yardımcı olabilirim. Aşağıdaki önerilerden birini seçin veya sorunuzu yazın.' }
   ]);
 
   const handleSuggestion = (q: string, a: string) => {

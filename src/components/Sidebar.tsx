@@ -295,8 +295,8 @@ export default function Sidebar() {
               <TrendingUp className="h-4 w-4 text-white" />
             </div>
             <div>
-              <span className="font-bold text-sm text-slate-800">Satış Pro</span>
-              <p className="text-[10px] text-slate-500">v3.0</p>
+              <span className="whitespace-nowrap text-sm font-bold text-slate-800">Inspira360 <span className="text-indigo-600">Revenue</span></span>
+              <p className="text-[10px] text-slate-500">Gelir Operasyonları</p>
             </div>
           </div>
         )}

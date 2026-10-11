@@ -230,7 +230,7 @@ export default function SettingsPage() {
               <div className="space-y-3">
                 <div className="flex justify-between p-2 bg-slate-50 rounded">
                   <span className="text-slate-600">Uygulama</span>
-                  <span className="font-medium">Satış Pro</span>
+                  <span className="font-medium">Inspira360 Revenue</span>
                 </div>
                 <div className="flex justify-between p-2 bg-slate-50 rounded">
                   <span className="text-slate-600">Versiyon</span>

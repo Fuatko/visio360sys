@@ -45,8 +45,8 @@ export default function LoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg mb-4">
             <TrendingUp className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">Satış Pro</h1>
-          <p className="text-slate-500 text-sm">Satış Yönetim Sistemi</p>
+          <h1 className="text-2xl font-bold text-slate-800">Inspira360 <span className="text-indigo-600">Revenue</span></h1>
+          <p className="text-slate-500 text-sm">Adaydan tahsilata gelir yönetimi</p>
         </div>
 
         <Card className="shadow-xl">
@@ -124,7 +124,7 @@ export default function LoginPage() {
         </Card>
 
         <p className="text-center text-xs text-slate-400 mt-6">
-          © 2025 MFK Danışmanlık • Satış Pro v1.0
+          © 2026 MFK Danışmanlık • Inspira360 Revenue
         </p>
       </div>
     </div>

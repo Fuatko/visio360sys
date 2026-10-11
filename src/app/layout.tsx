@@ -3,8 +3,8 @@ import "./globals.css";
 import ProtectedLayout from "@/components/ProtectedLayout";
 
 export const metadata: Metadata = {
-  title: "SatışPro - Satış Yönetim Sistemi",
-  description: "MFK Danışmanlık - Kurumsal Satış Yönetim Sistemi",
+  title: "Inspira360 Revenue · Gelir Operasyonları Platformu",
+  description: "Adaydan tahsilata gelir yönetimi: satış, teklif, bayi ve franchise kanalı, kârlılık ve müşteri başarısı.",
 };
 
 export default function RootLayout({

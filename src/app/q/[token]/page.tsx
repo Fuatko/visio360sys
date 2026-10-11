@@ -217,7 +217,7 @@ export default function PublicQuotePage() {
           </div>
         </div>
         <div className="mt-3 flex justify-between text-xs text-slate-400 print:hidden">
-          <span>Satış Pro ile gönderildi</span>
+          <span>Inspira360 Revenue ile gönderildi</span>
           <button onClick={() => window.print()} className="flex items-center gap-1 hover:text-slate-600"><Printer className="h-3 w-3" />Yazdır / PDF</button>
         </div>
       </div>
