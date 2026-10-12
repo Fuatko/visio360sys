@@ -8,9 +8,13 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { currentPeriods, periodRange, periodLabel, inRange } from '@/lib/periods';
 import { FORECAST_CATEGORIES, fcLabel, isClosed, isWon, isLost, staleSignals } from '@/lib/pipeline';
-import { AlertTriangle, TrendingUp, TrendingDown, Gauge, Trophy, XCircle, Clock, ArrowRight } from 'lucide-react';
+import { AlertTriangle, TrendingUp, TrendingDown, Gauge, Trophy, XCircle, Clock, ArrowRight, Sparkles } from 'lucide-react';
+import { learn, scoreDeals, simulate, hitProbability } from '@/lib/forecast-model';
+import ForecastCall from '@/components/forecast/ForecastCall';
+import ForecastAccuracy from '@/components/forecast/ForecastAccuracy';
+import { useAuth } from '@/lib/auth-context';
 
-type Tab = 'forecast' | 'changes' | 'stale' | 'winloss';
+type Tab = 'forecast' | 'call' | 'accuracy' | 'changes' | 'stale' | 'winloss';
 const tl = (v: number) => `₺${formatMoney(Math.round(v))}`;
 const n = (v: any) => Number(v) || 0;
 const d10 = (v: any) => (v ? String(v).slice(0, 10) : '');
@@ -34,11 +38,18 @@ export default function ForecastPage() {
   const [prevDate, setPrevDate] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [allSnaps, setAllSnaps] = useState<any[]>([]);
+  const [subs, setSubs] = useState<any[]>([]);
+  const [subsReady, setSubsReady] = useState(true);
+  const [targets, setTargets] = useState<any[]>([]);
+  const [me, setMe] = useState<{ id?: string; name?: string } | null>(null);
+  const { profile } = useAuth();
+  const canApprove = ['admin', 'manager', 'super_admin'].includes(profile?.role || '') || !!profile?.is_org_admin;
 
   const load = async () => {
     const [o, t, c, comp, act] = await Promise.all([
       supabase.from('opportunities').select('*'),
-      supabase.from('sales_team').select('id, name, region'),
+      supabase.from('sales_team').select('id, name, region, email'),
       supabase.from('customers').select('id, name'),
       supabase.from('competitors').select('id, name'),
       supabase.from('crm_activities').select('customer_id, activity_date').order('activity_date', { ascending: false }).limit(3000),
@@ -47,6 +58,15 @@ export default function ForecastPage() {
     const la: Record<string, string> = {};
     (act.data || []).forEach((a: any) => { if (a.customer_id && !la[a.customer_id]) la[a.customer_id] = a.activity_date; });
     setLastAct(la);
+    const [sn, fs, tg, u] = await Promise.all([
+      supabase.from('pipeline_snapshots').select('opportunity_id, snapshot_date, stage, expected_close').order('snapshot_date', { ascending: false }).limit(20000),
+      supabase.from('forecast_submissions').select('*').order('week_start', { ascending: false }).limit(5000),
+      supabase.from('sales_targets').select('sales_person_id, period, sales_target'),
+      supabase.auth.getUser(),
+    ]);
+    setAllSnaps(sn.data || []); setSubs(fs.data || []); setSubsReady(!fs.error); setTargets(tg.data || []);
+    const mine = (t.data || []).find((x: any) => x.email && x.email.toLowerCase() === (u.data.user?.email || '').toLowerCase());
+    setMe(mine ? { id: mine.id, name: mine.name } : { name: profile?.name || u.data.user?.email || '' });
     // Bu haftanın fotoğrafını al, önceki haftayla karşılaştır
     const snap = await supabase.rpc('take_pipeline_snapshot');
     if (snap.error) { setMissing(true); setLoading(false); return; }
@@ -80,6 +100,17 @@ export default function ForecastPage() {
   const won = sum(wonInPeriod), commit = sum(byCat('commit')), best = sum(byCat('best_case')), pipe = sum(byCat('pipeline'));
   const weighted = inPeriodOpen.filter(o => o.forecast_category !== 'omitted').reduce((s, o) => s + n(o.value) * n(o.probability) / 100, 0);
 
+  // ---- Model tahmini ----
+  const stats = useMemo(() => learn(opps, allSnaps), [opps, allSnaps]);
+  const staleIds = useMemo(() => new Set(opps.filter(o => staleSignals(o, o.customer_id ? (lastAct[o.customer_id] ?? null) : undefined).length).map(o => o.id)), [opps, lastAct]);
+  const scored = useMemo(() => scoreDeals(inPeriodOpen, stats, staleIds, range ? range[1] : ''), [opps, stats, staleIds, period]);
+  const scoreOf = (id: string) => scored.find(x => x.id === id);
+  const sim = useMemo(() => simulate(scored, won), [scored, won]);
+  const targetFor = (rep?: string) => targets.filter(t => (!rep || t.sales_person_id === rep) && (t.period === period || (String(t.period).length === 7 && inRange(`${t.period}-15`, range))))
+    .reduce((a, t) => a + n(t.sales_target), 0);
+  const orgTarget = targetFor();
+  const hitProb = useMemo(() => hitProbability(scored, won, orgTarget), [scored, won, orgTarget]);
+
   const reps = useMemo(() => {
     const ids = Array.from(new Set([...inPeriodOpen, ...wonInPeriod].map(o => o.assigned_to || '')));
     return ids.map(id => {
@@ -87,9 +118,10 @@ export default function ForecastPage() {
       const open = mine(inPeriodOpen);
       return { id, won: sum(mine(wonInPeriod)), commit: sum(open.filter(o => o.forecast_category === 'commit')),
         best: sum(open.filter(o => o.forecast_category === 'best_case')), pipe: sum(open.filter(o => (o.forecast_category || 'pipeline') === 'pipeline')),
-        weighted: open.filter(o => o.forecast_category !== 'omitted').reduce((s, o) => s + n(o.value) * n(o.probability) / 100, 0) };
+        weighted: open.filter(o => o.forecast_category !== 'omitted').reduce((s, o) => s + n(o.value) * n(o.probability) / 100, 0),
+        model: sum(mine(wonInPeriod)) + open.reduce((s, o) => s + (scoreOf(o.id) ? n(o.value) * scoreOf(o.id)!.modelProb : 0), 0), target: targetFor(id || undefined) };
     }).sort((a, b) => (b.won + b.commit) - (a.won + a.commit));
-  }, [opps, period]);
+  }, [opps, period, scored, targets]);
 
   // ---- Haftalık değişim ----
   const changes = useMemo(() => {
@@ -159,11 +191,11 @@ export default function ForecastPage() {
         {missing && <Card className="flex items-center gap-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4" /><b>satis-zekasi.sql</b> dosyasını Supabase'de çalıştırın.</Card>}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border bg-white p-1">
-            {([['forecast', 'Tahmin'], ['changes', 'Bu hafta ne değişti?'], ['stale', `Durgun fırsatlar (${stale.length})`], ['winloss', 'Kazanma / Kaybetme']] as [Tab, string][]).map(([k, l]) => (
+            {([['forecast', 'Tahmin'], ['call', 'Tahmin çağrısı'], ['accuracy', 'Tahmin isabeti'], ['changes', 'Bu hafta ne değişti?'], ['stale', `Durgun fırsatlar (${stale.length})`], ['winloss', 'Kazanma / Kaybetme']] as [Tab, string][]).map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 text-sm ${tab === k ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{l}</button>
             ))}
           </div>
-          {(tab === 'forecast' || tab === 'winloss') && (
+          {(tab === 'forecast' || tab === 'winloss' || tab === 'call') && (
             <select value={period} onChange={e => setPeriod(e.target.value)} className="ml-auto h-9 rounded-lg border px-2 text-sm">
               {[cp.month, cp.quarter, nextQuarter(), cp.year].map(p => <option key={p} value={p}>{periodLabel(p)}</option>)}
             </select>
@@ -179,16 +211,37 @@ export default function ForecastPage() {
               <Card className="p-4"><p className="text-xs text-slate-500">Huni (belirsiz)</p><p className="text-xl font-bold text-slate-600">{tl(pipe)}</p></Card>
               <Card className="p-4"><p className="text-xs text-slate-500">Olasılık ağırlıklı (açık)</p><p className="text-xl font-bold text-indigo-700">{tl(weighted)}</p><p className="text-[11px] text-slate-400">Kontrol için: temsilci tahmini vs olasılık</p></Card>
             </div>
+            <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white p-4">
+              <div className="flex flex-wrap items-start gap-6">
+                <div className="min-w-[220px]">
+                  <p className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-emerald-700"><Sparkles className="h-3.5 w-3.5" />Model tahmini</p>
+                  <p className="text-3xl font-bold text-emerald-800">{tl(sim.expected)}</p>
+                  <p className="text-xs text-slate-600">%80 olasılıkla <b>{tl(sim.p10)}</b> ile <b>{tl(sim.p90)}</b> arası</p>
+                </div>
+                <div className="min-w-[220px] flex-1">
+                  <div className="relative mt-3 h-3 rounded-full bg-slate-100">
+                    {(() => { const mx = Math.max(sim.p90, won + commit + best, orgTarget, 1) * 1.05; const L = (v: number) => `${(v / mx) * 100}%`; return (<>
+                      <div className="absolute h-3 rounded-full bg-emerald-200" style={{ left: L(sim.p10), width: `calc(${L(sim.p90)} - ${L(sim.p10)})` }} />
+                      <div className="absolute -top-1 h-5 w-1 rounded bg-emerald-700" style={{ left: L(sim.expected) }} title="Model" />
+                      <div className="absolute -top-1 h-5 w-1 rounded bg-indigo-600" style={{ left: L(won + commit) }} title="Temsilci tahmini (kazanılan + kesin)" />
+                      {orgTarget > 0 && <div className="absolute -top-2 h-7 w-0.5 bg-red-500" style={{ left: L(orgTarget) }} title="Hedef" />}
+                    </>); })()}
+                  </div>
+                  <p className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500"><span><span className="mr-1 inline-block h-2 w-2 rounded bg-emerald-700" />Model</span><span><span className="mr-1 inline-block h-2 w-2 rounded bg-indigo-600" />Ekip tahmini {tl(won + commit)}</span>{orgTarget > 0 && <span><span className="mr-1 inline-block h-2 w-2 bg-red-500" />Hedef {tl(orgTarget)}{hitProb !== null && ` · ulaşma olasılığı %${Math.round(hitProb * 100)}`}</span>}</p>
+                </div>
+                <p className="max-w-xs text-[11px] text-slate-500">Şirketinizin geçmişinden öğrenir: aşama bazlı kazanma oranı ({stats.snapshotSample ? `${Object.values(stats.stage).reduce((a, x) => a + x.total, 0)} sonuçlanmış aşama kaydı` : 'henüz geçmiş yok, sektör varsayılanları'}), temsilci başarısı ({stats.closedSample} kapanmış fırsat), tarih kayması (%{Math.round(stats.slipRate * 100)}) ve durgunluk. Geçmiş biriktikçe isabeti artar.</p>
+              </div>
+            </Card>
             <Card className="p-4">
               <h3 className="mb-2 text-sm font-semibold">Temsilci bazında — {periodLabel(period)}</h3>
               <table className="w-full text-sm">
-                <thead><tr className="border-b text-left text-xs text-slate-500"><th className="py-2">Temsilci</th><th className="text-right">Kazanılan</th><th className="text-right">Kesin</th><th className="text-right">Tahmin</th><th className="text-right">En iyi durum</th><th className="text-right">Huni</th><th className="text-right">Ağırlıklı</th></tr></thead>
+                <thead><tr className="border-b text-left text-xs text-slate-500"><th className="py-2">Temsilci</th><th className="text-right">Kazanılan</th><th className="text-right">Kesin</th><th className="text-right">Tahmin</th><th className="text-right">En iyi durum</th><th className="text-right">Huni</th><th className="text-right">Ağırlıklı</th><th className="text-right">Model</th></tr></thead>
                 <tbody>
-                  {reps.length === 0 && <tr><td colSpan={7} className="py-3 text-slate-500">Bu dönemde kapanış tarihli fırsat yok.</td></tr>}
+                  {reps.length === 0 && <tr><td colSpan={8} className="py-3 text-slate-500">Bu dönemde kapanış tarihli fırsat yok.</td></tr>}
                   {reps.map(r => (
                     <tr key={r.id} className="border-b"><td className="py-1.5 font-medium">{pname(r.id)}</td><td className="text-right text-green-700">{tl(r.won)}</td><td className="text-right">{tl(r.commit)}</td>
                       <td className="text-right font-semibold">{tl(r.won + r.commit)}</td><td className="text-right text-blue-700">{tl(r.best)}</td><td className="text-right text-slate-500">{tl(r.pipe)}</td>
-                      <td className={`text-right ${Math.abs(r.weighted - (r.won + r.commit)) > (r.won + r.commit) * 0.3 ? 'text-amber-700' : ''}`}>{tl(r.weighted)}</td></tr>
+                      <td className={`text-right ${Math.abs(r.weighted - (r.won + r.commit)) > (r.won + r.commit) * 0.3 ? 'text-amber-700' : ''}`}>{tl(r.weighted)}</td><td className="text-right text-emerald-700">{tl(r.model)}</td></tr>
                   ))}
                 </tbody>
               </table>
@@ -197,12 +250,13 @@ export default function ForecastPage() {
               <h3 className="mb-2 text-sm font-semibold">Bu dönem kapanması beklenen fırsatlar — kategoriyi buradan güncelleyin</h3>
               {inPeriodOpen.length === 0 ? <p className="text-sm text-slate-500">Fırsat yok.</p> : (
                 <table className="w-full text-sm">
-                  <thead><tr className="border-b text-left text-xs text-slate-500"><th className="py-2">Fırsat</th><th>Temsilci</th><th>Kapanış</th><th className="text-right">Değer</th><th className="text-right">Olasılık</th><th>Kategori</th></tr></thead>
+                  <thead><tr className="border-b text-left text-xs text-slate-500"><th className="py-2">Fırsat</th><th>Temsilci</th><th>Kapanış</th><th className="text-right">Değer</th><th className="text-right">Olasılık</th><th className="text-right">Model</th><th className="pl-4">Kategori</th></tr></thead>
                   <tbody>{[...inPeriodOpen].sort((a, b) => n(b.value) - n(a.value)).map(o => (
                     <tr key={o.id} className="border-b"><td className="py-1.5"><p className="font-medium">{o.title}</p><p className="text-xs text-slate-500">{cname(o.customer_id)} · {o.stage}</p></td>
                       <td className="text-xs">{pname(o.assigned_to)}</td><td className="text-xs">{formatDate(o.expected_close)}</td>
                       <td className="text-right">{tl(n(o.value))}</td><td className="text-right">%{n(o.probability)}</td>
-                      <td><select value={o.forecast_category || 'pipeline'} onChange={e => setCategory(o.id, e.target.value)} className="h-8 rounded border px-1 text-xs">
+                      <td className="text-right" title={scoreOf(o.id)?.reasons.join(', ') || ''}>{scoreOf(o.id) ? <span className={Math.abs(scoreOf(o.id)!.modelProb * 100 - n(o.probability)) >= 25 ? 'font-semibold text-amber-700' : 'text-emerald-700'}>%{Math.round(scoreOf(o.id)!.modelProb * 100)}</span> : '-'}</td>
+                      <td className="pl-4"><select value={o.forecast_category || 'pipeline'} onChange={e => setCategory(o.id, e.target.value)} className="h-8 rounded border px-1 text-xs">
                         {FORECAST_CATEGORIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select></td></tr>
                   ))}</tbody>
                 </table>
@@ -210,6 +264,12 @@ export default function ForecastPage() {
             </Card>
           </>
         )}
+
+        {tab === 'call' && (!subsReady
+          ? <Card className="flex items-center gap-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4" /><b>forecast-cagrisi.sql</b> dosyasını Supabase'de çalıştırın.</Card>
+          : <ForecastCall supabase={supabase} period={period} reps={reps} team={team} subs={subs} me={me} canApprove={canApprove}
+              teamModel={sim} target={orgTarget} hitProb={hitProb} onChanged={load} />)}
+        {tab === 'accuracy' && <ForecastAccuracy subs={subs} opps={opps} team={team} />}
 
         {tab === 'changes' && (
           !changes ? <Card className="p-6 text-sm text-slate-500">Huni fotoğrafı her hafta bu sayfa açıldığında otomatik alınır. Gelecek hafta "geçen haftadan beri ne değişti" burada görünecek.</Card> : (
