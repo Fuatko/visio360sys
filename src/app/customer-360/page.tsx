@@ -275,7 +275,7 @@ export default function Customer360Page() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-slate-900">{customer.name}</p>
-                        <p className="text-xs text-slate-500">{customer.region}</p>
+                        <p className="text-xs text-slate-500">{customer.region} <a href={`/customers/${customer.id}`} onClick={e => e.stopPropagation()} className="ml-1 text-indigo-600 hover:underline">Kartı aç →</a></p>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded text-xs ${getSegmentColor(customer.segment)}`}>
