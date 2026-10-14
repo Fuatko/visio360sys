@@ -9,7 +9,15 @@ export function parasutEnv() {
   const clientId = process.env.PARASUT_CLIENT_ID, clientSecret = process.env.PARASUT_CLIENT_SECRET;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL, anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, service = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const missing = [!clientId && 'PARASUT_CLIENT_ID', !clientSecret && 'PARASUT_CLIENT_SECRET', !service && 'SUPABASE_SERVICE_ROLE_KEY'].filter(Boolean) as string[];
+  if (service && serviceKeyKind(service) === 'public') missing.push('SUPABASE_SERVICE_ROLE_KEY (girilen değer herkese açık anon/publishable anahtar; service_role / secret anahtar olmalı)');
   return { clientId: clientId || '', clientSecret: clientSecret || '', url: url || '', anon: anon || '', service: service || '', missing };
+}
+/** Anahtar türü: JWT ise role alanına, yeni formatta önekine bakar */
+export function serviceKeyKind(k: string): 'service' | 'public' | 'unknown' {
+  if (k.startsWith('sb_secret_')) return 'service';
+  if (k.startsWith('sb_publishable_')) return 'public';
+  try { const role = JSON.parse(Buffer.from(k.split('.')[1], 'base64url').toString()).role; return role === 'service_role' ? 'service' : role === 'anon' ? 'public' : 'unknown'; }
+  catch { return 'unknown'; }
 }
 export const adminClient = () => { const e = parasutEnv(); return createClient(e.url, e.service, { auth: { persistSession: false } }); };
 export const authorizeUrl = () =>
