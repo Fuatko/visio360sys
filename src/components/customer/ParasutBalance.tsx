@@ -12,9 +12,11 @@ const tl = (v: any) => `${Number(v) < 0 ? '-' : ''}₺${formatMoney(Math.abs(Mat
 
 /** Müşteri kartında Paraşüt cari durumu: alacağımız, borcumuz, net ve açık faturalar */
 export default function ParasutBalance({ customerId }: { customerId: string }) {
-  const [d, setD] = useState<{ connected: boolean; documents: PDoc[] } | null>(null);
+  const [d, setD] = useState<{ connected: boolean; documents: PDoc[]; contacts?: any[]; contact_error?: string | null; sync_from?: string } | null>(null);
   useEffect(() => { parasutCall(`/api/parasut/balance?customer_id=${customerId}`).then(setD).catch(() => setD(null)); }, [customerId]);
-  if (!d?.connected || !d.documents.length) return null;
+  if (!d?.connected) return null;
+  const pc = (d.contacts || []).filter(c => c.trl_balance !== null || c.balance !== null);
+  const pBal = pc.reduce((a, c) => a + (Number(c.trl_balance ?? c.balance) || 0), 0);
 
   const t = new Date().toISOString().slice(0, 10);
   const open = d.documents.filter(x => Number(x.net_total_try) > 0 && openTry(x) > 0.5)
@@ -27,7 +29,16 @@ export default function ParasutBalance({ customerId }: { customerId: string }) {
   return (
     <Card className="p-4">
       <p className="flex items-center gap-1 text-sm font-semibold"><Wallet className="h-4 w-4 text-indigo-600" />Cari durum (Paraşüt)</p>
-      {!open.length ? <p className="mt-1 text-xs text-emerald-700">Açık fatura yok, hesap kapalı.</p> : (<>
+      {pc.length > 0 && (
+        <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+          <p className="text-[11px] text-slate-500">Paraşüt cari bakiyesi (tüm geçmiş, canlı)</p>
+          <p className={`text-lg font-bold ${Math.abs(pBal) < 0.5 ? 'text-slate-700' : pBal > 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{tl(pBal)}</p>
+          <p className="text-[11px] text-slate-500">{Math.abs(pBal) < 0.5 ? 'Hesap kapalı' : pBal > 0 ? 'Bize borçlu (alacağımız)' : 'Biz borçluyuz (ödememiz gereken)'}</p>
+          {pc.length > 1 && <div className="mt-1 space-y-0.5 text-[11px] text-slate-500">{pc.map(c => <p key={c.id} className="flex justify-between gap-2"><span className="truncate">{c.name}{c.account_type === 'supplier' ? ' (tedarikçi)' : c.account_type === 'customer' ? ' (müşteri)' : ''}</span><span>{tl(c.trl_balance ?? c.balance)}</span></p>)}</div>}
+        </div>
+      )}
+      {d.contact_error && <p className="mt-1 text-[10px] text-slate-400">Paraşüt carisi okunamadı: {d.contact_error}</p>}
+      {!open.length ? <p className="mt-2 text-xs text-slate-500">{d.sync_from ? new Date(d.sync_from).toLocaleDateString('tr-TR') + ' sonrası eşitlenen' : 'Eşitlenen'} faturalarda açık kalem yok.</p> : (<>
         <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
           <div><p className="text-[11px] text-slate-500">Alacağımız</p><p className="font-bold text-emerald-700">{tl(s(rec))}</p>{od(rec) > 0 && <p className="text-[10px] text-red-600">{tl(od(rec))} vadesi geçmiş</p>}</div>
           <div><p className="text-[11px] text-slate-500">Borcumuz</p><p className="font-bold text-amber-700">{tl(s(pay))}</p>{od(pay) > 0 && <p className="text-[10px] text-red-600">{tl(od(pay))} vadesi geçmiş</p>}</div>
@@ -37,8 +48,8 @@ export default function ParasutBalance({ customerId }: { customerId: string }) {
           const late = x.due_date && x.due_date < t;
           return <p key={x.id} className="flex justify-between gap-2"><span className="truncate">{x.kind === 'sales_invoice' ? '↗' : '↙'} {x.doc_no || 'Fatura'} <span className="text-slate-400">vade {x.due_date ? new Date(x.due_date).toLocaleDateString('tr-TR') : '-'}</span>{late && <span className="text-red-600"> · {daysSince(x.due_date)} gün gecikti</span>}</span><span className={x.kind === 'sales_invoice' ? 'text-emerald-700' : 'text-amber-700'}>{tl(openTry(x))}</span></p>;
         })}</div>
-        <Link href="/integrations" className="mt-2 block text-xs text-indigo-600">Tüm cari bakiyeler →</Link>
-      </>)}
+        </>)}
+      <Link href="/integrations" className="mt-2 block text-xs text-indigo-600">Tüm cari bakiyeler →</Link>
     </Card>
   );
 }
