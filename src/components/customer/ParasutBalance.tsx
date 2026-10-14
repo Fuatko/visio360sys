@@ -29,8 +29,9 @@ export default function ParasutBalance({ customerId, roles = [], onDocs }: { cus
   const od = (a: PDoc[]) => s(a.filter(x => x.due_date && x.due_date < t));
   const net = s(rec) - s(pay);
   // Paraşüt bakiyesinin yönünü açık faturalardan çıkar (Paraşüt yalnızca sayı gönderir)
-  const dir: 'same' | 'flip' | null = useLive && Math.abs(pBal) >= 0.5 ? (Math.abs(net - pBal) <= Math.max(1, Math.abs(pBal) * 0.01) ? 'same' : Math.abs(net + pBal) <= Math.max(1, Math.abs(pBal) * 0.01) ? 'flip' : null) : null;
-  const signed = dir === 'flip' ? -pBal : pBal;
+  // Paraşüt ekstresinde pozitif bakiye = cari bize borçlu (ekstre ile doğrulandı)
+  const dir: 'same' | 'flip' | null = Math.abs(pBal) >= 0.5 ? 'same' : null;
+  const signed = pBal;
 
   // İlişki özeti: kategori (iş kolu) bazında kestiğimiz / bize kesilen
   const yr = String(new Date().getFullYear());
