@@ -98,8 +98,8 @@ export async function listCompanies(admin: SupabaseClient, c: Conn) {
 // ------------------------------ Eşitleme ------------------------------
 type Kind = 'sales_invoice' | 'purchase_bill' | 'salary' | 'tax' | 'bank_fee';
 const SOURCES: { kind: Kind; path: string; include: string; contactRel?: string; keep: (t?: string) => number }[] = [
-  { kind: 'sales_invoice', path: 'sales_invoices', include: 'contact', contactRel: 'contact', keep: t => (t === 'refund' ? -1 : ['invoice', 'export', undefined, null, ''].includes(t as any) ? 1 : 0) },
-  { kind: 'purchase_bill', path: 'purchase_bills', include: 'supplier,category', contactRel: 'supplier', keep: t => (t === 'refund' ? -1 : ['purchase_bill', 'invoice', undefined, null, ''].includes(t as any) ? 1 : 0) },
+  { kind: 'sales_invoice', path: 'sales_invoices', include: 'contact', contactRel: 'contact', keep: t => (t === 'refund' ? -1 : ['invoice', 'export', 'recurring_invoice', undefined, null, ''].includes(t as any) ? 1 : 0) },
+  { kind: 'purchase_bill', path: 'purchase_bills', include: 'supplier,category', contactRel: 'supplier', keep: t => (t === 'refund' ? -1 : ['cancelled', 'canceled', 'estimate'].includes(String(t)) ? 0 : 1) },   // gider faturasının tüm türleri (e-fatura, gider pusulası vb.)
   { kind: 'salary', path: 'salaries', include: 'employee,category', contactRel: 'employee', keep: () => 1 },
   { kind: 'tax', path: 'taxes', include: 'category', keep: () => 1 },
   { kind: 'bank_fee', path: 'bank_fees', include: 'category', keep: () => 1 },
@@ -134,7 +134,7 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
           const issue = String(a.issue_date || '').slice(0, 10);
           if (issue && issue < from) { done = true; break; }
           const sign = src.keep(a.item_type);
-          if (!sign || a.archived) continue;
+          if (!sign) { const k = `${src.kind}:${a.item_type}`; result.skipped_types = { ...(result.skipped_types || {}), [k]: ((result.skipped_types || {})[k] || 0) + 1 }; continue; }
           const relRef = src.contactRel ? d.relationships?.[src.contactRel]?.data : null;
           const contact = relRef ? inc.get(`${relRef.type}:${relRef.id}`) : null;
           const catRef = d.relationships?.category?.data; const cat = catRef ? inc.get(`${catRef.type}:${catRef.id}`) : null;

@@ -40,6 +40,33 @@ export async function GET(request: Request) {
     } catch (e: any) { contactErr = e.message; }
   }
   const cids = new Set(contacts.map(c => c.id));
+
+  // Bu carinin Paraşüt'teki TÜM açık faturaları (tarih sınırı yok), canlı
+  const live: any[] = []; const liveErr: string[] = [];
+  if (conn.company_id && contacts.length) {
+    const kinds = [
+      { kind: 'sales_invoice', path: 'sales_invoices', rel: 'contact', filter: 'filter[contact_id]' },
+      { kind: 'purchase_bill', path: 'purchase_bills', rel: 'supplier', filter: 'filter[supplier_id]' },
+    ];
+    for (const c of contacts.slice(0, 3)) for (const k of kinds) {
+      try {
+        for (let page = 1; page <= 4; page++) {
+          const j = await api(admin, conn as any, `/${conn.company_id}/${k.path}`, { [k.filter]: c.id, sort: '-issue_date', 'page[size]': '25', 'page[number]': String(page) });
+          for (const d of j.data || []) {
+            const a = d.attributes || {};
+            if (String(d.relationships?.[k.rel]?.data?.id || '') !== c.id) continue;      // filtre desteklenmese de doğru cari
+            if (['cancelled', 'canceled', 'estimate'].includes(String(a.item_type))) continue;
+            const rem = Number(a.remaining_in_trl ?? a.remaining) || 0;
+            if (a.payment_status === 'paid' || Math.abs(rem) < 0.5) continue;
+            live.push({ id: `live-${k.kind}-${d.id}`, kind: k.kind, doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.invoice_no || a.description || null,
+              issue_date: String(a.issue_date || '').slice(0, 10) || null, due_date: String(a.due_date || '').slice(0, 10) || null, item_type: a.item_type || null,
+              contact_name: c.name, remaining: Math.abs(rem), net_total_try: a.item_type === 'refund' ? -1 : 1, payment_status: a.payment_status || null });
+          }
+          if (page >= (Number(j.meta?.total_pages) || 1)) break;
+        }
+      } catch (e: any) { liveErr.push(`${k.path}: ${e.message}`); }
+    }
+  }
   const myBills = (bills.data || []).filter((d: any) => (d.contact_parasut_id && cids.has(String(d.contact_parasut_id))) || (tax && String(d.tax_number || '') === tax) || (names.has(normalizeName(d.contact_name || '')) && (!tax || !d.tax_number)));
-  return NextResponse.json({ connected: true, sync_from: conn.sync_from, contacts, contact_error: contactErr, documents: [...(sales.data || []), ...myBills] });
+  return NextResponse.json({ connected: true, sync_from: conn.sync_from, contacts, contact_error: contactErr, live: live, live_ok: !!contacts.length && liveErr.length === 0, live_errors: liveErr, documents: [...(sales.data || []), ...myBills] });
 }
