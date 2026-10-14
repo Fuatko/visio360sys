@@ -86,6 +86,7 @@ const salesItems = [
   { href: '/franchise', label: 'Franchise & Şube Ağı', icon: Coffee },
   { href: '/suppliers', label: 'Ana Firmalarım', icon: Factory },
   { href: '/profitability', label: 'Kârlılık (Net Kâr)', icon: Calculator },
+  { href: '/business-lines', label: 'İş Kolları & Bayi İşleri', icon: Layers },
 ];
 
 // Planlama & Analiz

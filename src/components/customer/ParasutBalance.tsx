@@ -11,9 +11,9 @@ import { Wallet } from 'lucide-react';
 const tl = (v: any) => `${Number(v) < 0 ? '-' : ''}₺${formatMoney(Math.abs(Math.round(Number(v) || 0)))}`;
 
 /** Müşteri kartında Paraşüt cari durumu: alacağımız, borcumuz, net ve açık faturalar */
-export default function ParasutBalance({ customerId }: { customerId: string }) {
-  const [d, setD] = useState<{ connected: boolean; documents: PDoc[]; contacts?: any[]; contact_error?: string | null; sync_from?: string; live?: PDoc[]; live_ok?: boolean; live_errors?: string[]; recent?: any[]; raw?: Record<string, number> } | null>(null);
-  useEffect(() => { parasutCall(`/api/parasut/balance?customer_id=${customerId}`).then(setD).catch(() => setD(null)); }, [customerId]);
+export default function ParasutBalance({ customerId, roles = [], onDocs }: { customerId: string; roles?: string[]; onDocs?: (all: any[]) => void }) {
+  const [d, setD] = useState<{ connected: boolean; documents: PDoc[]; contacts?: any[]; contact_error?: string | null; sync_from?: string; live?: PDoc[]; live_ok?: boolean; live_errors?: string[]; recent?: any[]; raw?: Record<string, number>; all?: any[] } | null>(null);
+  useEffect(() => { parasutCall(`/api/parasut/balance?customer_id=${customerId}`).then(r => { setD(r); onDocs?.(r?.all || []); }).catch(() => setD(null)); }, [customerId]);
   if (!d?.connected) return null;
   const pc = (d.contacts || []).filter(c => c.trl_balance !== null || c.balance !== null);
   const pBal = pc.reduce((a, c) => a + (Number(c.trl_balance ?? c.balance) || 0), 0);
@@ -32,9 +32,38 @@ export default function ParasutBalance({ customerId }: { customerId: string }) {
   const dir: 'same' | 'flip' | null = useLive && Math.abs(pBal) >= 0.5 ? (Math.abs(net - pBal) <= Math.max(1, Math.abs(pBal) * 0.01) ? 'same' : Math.abs(net + pBal) <= Math.max(1, Math.abs(pBal) * 0.01) ? 'flip' : null) : null;
   const signed = dir === 'flip' ? -pBal : pBal;
 
+  // İlişki özeti: kategori (iş kolu) bazında kestiğimiz / bize kesilen
+  const yr = String(new Date().getFullYear());
+  const group = (kind: string) => {
+    const m = new Map<string, { cat: string; ytd: number; total: number; open: number; n: number }>();
+    (d.all || []).filter(x => x.kind === kind).forEach(x => {
+      const k = x.category || 'Kategorisiz'; const g = m.get(k) || { cat: k, ytd: 0, total: 0, open: 0, n: 0 };
+      g.total += x.net_try; g.open += x.open_try; g.n++; if (String(x.issue_date || '').startsWith(yr)) g.ytd += x.net_try; m.set(k, g);
+    });
+    return Array.from(m.values()).sort((a, b) => b.total - a.total);
+  };
+  const salesG = group('sales_invoice'), buyG = group('purchase_bill');
+  const sumG = (g: any[], k: 'ytd' | 'total' | 'open') => g.reduce((a, x) => a + x[k], 0);
+  const salesTitle = roles.includes('partner') && !roles.includes('customer') ? 'İş ortağı olarak · kestiğimiz (hakediş)' : roles.includes('partner') ? 'Müşteri / iş ortağı olarak · kestiğimiz' : 'Kestiğimiz faturalar';
+  const buyTitle = roles.includes('principal') ? 'Ana firma olarak · bize kesilen (bayi alışı)' : roles.includes('supplier') ? 'Tedarikçi olarak · bize kesilen' : 'Bize kesilen faturalar';
+  const Section = ({ title, g, color }: { title: string; g: any[]; color: string }) => !g.length ? null : (
+    <div className="mt-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{title}</p>
+      <table className="mt-1 w-full text-[11px]">
+        <thead><tr className="text-slate-400"><th className="text-left font-normal">İş kolu (kategori)</th><th className="text-right font-normal">{yr}</th><th className="text-right font-normal">Toplam</th><th className="text-right font-normal">Açık</th></tr></thead>
+        <tbody>{g.map(x => <tr key={x.cat}><td className="truncate pr-1 text-slate-700">{x.cat} <span className="text-slate-400">({x.n})</span></td><td className="text-right">{tl(x.ytd)}</td><td className={`text-right ${color}`}>{tl(x.total)}</td><td className={`text-right ${x.open >= 0.5 ? 'font-medium text-red-600' : 'text-slate-400'}`}>{x.open >= 0.5 ? tl(x.open) : '-'}</td></tr>)}
+          {g.length > 1 && <tr className="border-t font-medium"><td>Toplam</td><td className="text-right">{tl(sumG(g, 'ytd'))}</td><td className={`text-right ${color}`}>{tl(sumG(g, 'total'))}</td><td className="text-right">{sumG(g, 'open') >= 0.5 ? tl(sumG(g, 'open')) : '-'}</td></tr>}</tbody>
+      </table>
+    </div>);
+
   return (
     <Card className="p-4">
       <p className="flex items-center gap-1 text-sm font-semibold"><Wallet className="h-4 w-4 text-indigo-600" />Cari durum (Paraşüt)</p>
+      <Section title={salesTitle} g={salesG} color="text-emerald-700" />
+      <Section title={buyTitle} g={buyG} color="text-amber-700" />
+      {salesG.length > 0 && buyG.length > 0 && (
+        <p className="mt-2 rounded bg-indigo-50 px-2 py-1 text-[11px] text-indigo-800">Bu firmayla iki yönlü çalışıyorsunuz: {yr} içinde {tl(sumG(salesG, 'ytd'))} kestiniz, {tl(sumG(buyG, 'ytd'))} size kesildi · fark {tl(sumG(salesG, 'ytd') - sumG(buyG, 'ytd'))}</p>
+      )}
       {pc.length > 0 && (
         <div className="mt-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
           <p className="text-[11px] text-slate-500">Paraşüt cari bakiyesi (tüm geçmiş, canlı)</p>

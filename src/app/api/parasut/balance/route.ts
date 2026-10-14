@@ -48,7 +48,7 @@ export async function GET(request: Request) {
   const cids = new Set(contacts.map(c => c.id));
 
   // Bu carinin Paraşüt'teki TÜM açık faturaları (tarih sınırı yok), canlı
-  const live: any[] = []; const liveErr: string[] = []; const recent: any[] = []; const raw: Record<string, number> = {};
+  const live: any[] = []; const liveErr: string[] = []; const recent: any[] = []; const raw: Record<string, number> = {}; const all: any[] = [];
   if (conn.company_id && contacts.length) {
     const kinds = [
       { kind: 'sales_invoice', path: 'sales_invoices', rel: 'contact', filter: 'filter[contact_id]' },
@@ -57,8 +57,9 @@ export async function GET(request: Request) {
     for (const c of contacts) for (const k of kinds) {
       try {
         for (let page = 1; page <= 4; page++) {
-          const j = await api(admin, conn as any, `/${conn.company_id}/${k.path}`, { [k.filter]: c.id, include: k.rel, sort: '-issue_date', 'page[size]': '25', 'page[number]': String(page) });
+          const j = await api(admin, conn as any, `/${conn.company_id}/${k.path}`, { [k.filter]: c.id, include: `${k.rel},category`, sort: '-issue_date', 'page[size]': '25', 'page[number]': String(page) });
           raw[k.kind] = (raw[k.kind] || 0) + (j.data || []).length;
+          const inc = new Map<string, any>((j.included || []).map((x: any) => [`${x.type}:${x.id}`, x]));
           for (const d of j.data || []) {
             const a = d.attributes || {};
             const relId = d.relationships?.[k.rel]?.data?.id;
@@ -66,6 +67,13 @@ export async function GET(request: Request) {
             const rem0 = Number(a.remaining_in_trl ?? a.remaining) || 0;
             if (recent.filter(r => r.contact_id === c.id && r.kind === k.kind).length < 8) recent.push({ contact_id: c.id, kind: k.kind, issue_date: String(a.issue_date || '').slice(0, 10), doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.description || null, item_type: a.item_type || null, payment_status: a.payment_status || null, gross: Number(a.gross_total ?? a.total) || 0, remaining: rem0, currency: a.currency || null });
             if (['cancelled', 'canceled', 'estimate'].includes(String(a.item_type))) continue;
+            {
+              const cr = d.relationships?.category?.data; const cat = cr ? inc.get(`${cr.type}:${cr.id}`)?.attributes?.name : null;
+              const cur = a.currency === 'TRL' || !a.currency ? 'TRY' : a.currency; const rate = Number(a.exchange_rate) || 1; const sg = a.item_type === 'refund' ? -1 : 1;
+              const net = Number(a.net_total ?? a.total) || 0;
+              all.push({ kind: k.kind, contact_id: c.id, issue_date: String(a.issue_date || '').slice(0, 10) || null, category: cat || null,
+                net_try: sg * net * (cur === 'TRY' ? 1 : rate), open_try: a.payment_status === 'paid' ? 0 : Math.abs(rem0) });
+            }
             const rem = Number(a.remaining_in_trl ?? a.remaining) || 0;
             if (a.payment_status === 'paid' || Math.abs(rem) < 0.5) continue;
             live.push({ id: `live-${k.kind}-${d.id}`, kind: k.kind, doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.invoice_no || a.description || null,
@@ -78,5 +86,5 @@ export async function GET(request: Request) {
     }
   }
   const myBills = (bills.data || []).filter((d: any) => (d.contact_parasut_id && cids.has(String(d.contact_parasut_id))) || (tax && String(d.tax_number || '') === tax) || (names.has(normalizeName(d.contact_name || '')) && (!tax || !d.tax_number)));
-  return NextResponse.json({ connected: true, sync_from: conn.sync_from, contacts, contact_error: contactErr, live, recent, raw, live_ok: !!contacts.length && liveErr.length === 0, live_errors: liveErr, documents: [...(sales.data || []), ...myBills] });
+  return NextResponse.json({ connected: true, sync_from: conn.sync_from, contacts, contact_error: contactErr, live, recent, raw, all, live_ok: !!contacts.length && liveErr.length === 0, live_errors: liveErr, documents: [...(sales.data || []), ...myBills] });
 }

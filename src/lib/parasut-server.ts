@@ -98,7 +98,7 @@ export async function listCompanies(admin: SupabaseClient, c: Conn) {
 // ------------------------------ Eşitleme ------------------------------
 type Kind = 'sales_invoice' | 'purchase_bill' | 'salary' | 'tax' | 'bank_fee';
 const SOURCES: { kind: Kind; path: string; include: string; contactRel?: string; keep: (t?: string) => number }[] = [
-  { kind: 'sales_invoice', path: 'sales_invoices', include: 'contact', contactRel: 'contact', keep: t => (t === 'refund' ? -1 : ['invoice', 'export', 'recurring_invoice', undefined, null, ''].includes(t as any) ? 1 : 0) },
+  { kind: 'sales_invoice', path: 'sales_invoices', include: 'contact,category', contactRel: 'contact', keep: t => (t === 'refund' ? -1 : ['invoice', 'export', 'recurring_invoice', undefined, null, ''].includes(t as any) ? 1 : 0) },
   { kind: 'purchase_bill', path: 'purchase_bills', include: 'supplier,category', contactRel: 'supplier', keep: t => (t === 'refund' ? -1 : ['cancelled', 'canceled', 'estimate'].includes(String(t)) ? 0 : 1) },   // gider faturasının tüm türleri (e-fatura, gider pusulası vb.)
   { kind: 'salary', path: 'salaries', include: 'employee,category', contactRel: 'employee', keep: () => 1 },
   { kind: 'tax', path: 'taxes', include: 'category', keep: () => 1 },
