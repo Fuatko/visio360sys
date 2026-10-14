@@ -168,6 +168,11 @@ export default function IntegrationsPage() {
 
         {docs.length > 0 && (
           <>
+            <Card className="flex flex-wrap items-center gap-3 border-indigo-200 bg-indigo-50/50 p-4">
+              <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-indigo-900">Paraşüt carilerini yazılıma aktarın</p>
+                <p className="text-xs text-indigo-800">Aktif çalıştığınız firmalar faturalarına göre müşteri, iş ortağı ve ana firma olarak önerilir; tek tıkla kartları açılır, faturaları bağlanır.</p></div>
+              <Link href="/integrations/import"><Button size="sm">Carileri aktar →</Button></Link>
+            </Card>
             <div className="grid gap-3 sm:grid-cols-4">
               <Card className="p-4"><p className="text-xs text-slate-500">Bu yıl satış (KDV hariç)</p><p className="text-xl font-bold text-green-700">{tl(ytd('sales_invoice'))}</p></Card>
               <Card className="p-4"><p className="text-xs text-slate-500">Bu yıl alış faturaları</p><p className="text-xl font-bold">{tl(ytd('purchase_bill'))}</p></Card>
