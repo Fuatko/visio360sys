@@ -1,6 +1,7 @@
 'use client';
 
 import Header from '@/components/Header';
+import ParasutPnl from '@/components/profitability/ParasutPnl';
 import { Card, Button, Modal, Input, Select, Textarea } from '@/components/ui';
 import { formatMoney, formatDate } from '@/lib/utils';
 import { createClient } from '@/lib/supabase';
@@ -10,7 +11,7 @@ import { computePnl, parseExpensePaste } from '@/lib/profitability';
 import { EXPENSE_CATEGORIES, SUPPLIER_MODELS, n } from '@/lib/suppliers';
 import { AlertTriangle, Plus, ClipboardPaste, Trash2, Settings2, Info } from 'lucide-react';
 
-type Tab = 'pnl' | 'principals' | 'monthly' | 'expenses';
+type Tab = 'pnl' | 'principals' | 'monthly' | 'expenses' | 'parasut';
 const tl = (v: number) => `${v < 0 ? '-' : ''}₺${formatMoney(Math.abs(Math.round(v)))}`;
 const pct = (v: number) => `%${v.toFixed(1)}`;
 
@@ -52,7 +53,7 @@ export default function ProfitabilityPage() {
     if (fs.data) setSettings(fs.data);
     setLoading(false);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); try { const t = new URLSearchParams(window.location.search).get('tab'); if (t) setTab(t as Tab); } catch { /* yok say */ } }, [load]);
 
   const inR = (d: any, r: [string, string] | null) => !!d && !!r && String(d).slice(0, 10) >= r[0] && String(d).slice(0, 10) <= r[1];
   const pnlFor = (r: [string, string] | null) => {
@@ -118,7 +119,7 @@ export default function ProfitabilityPage() {
         {missing && <Card className="flex items-center gap-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4" /><b>ana-firmalar.sql</b> dosyasını Supabase'de çalıştırın.</Card>}
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border bg-white p-1">
-            {([['pnl', 'Kâr / zarar'], ['principals', 'Marka / model bazında'], ['monthly', 'Aylık'], ['expenses', `Giderler (${raw.expenses.length})`]] as [Tab, string][]).map(([k, l]) => (
+            {([['pnl', 'Kâr / zarar'], ['principals', 'Marka / model bazında'], ['monthly', 'Aylık'], ['expenses', `Giderler (${raw.expenses.length})`], ['parasut', 'Fatura bazlı (Paraşüt)']] as [Tab, string][]).map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 text-sm ${tab === k ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{l}</button>
             ))}
           </div>
@@ -127,6 +128,7 @@ export default function ProfitabilityPage() {
           <Button variant="secondary" size="sm" onClick={() => setSetOpen(true)} title="Vergi oranı"><Settings2 className="h-4 w-4" /></Button>
         </div>
 
+        {tab === 'parasut' && <ParasutPnl supabase={supabase} period={period} taxRate={n(settings.corporate_tax_rate)} orderRevenue={pnl.revenue} />}
         {tab === 'pnl' && (
           <div className="grid gap-4 lg:grid-cols-3">
             <Card className="p-5 lg:col-span-2">

@@ -49,6 +49,7 @@ import {
   MapPinned,
   ShieldCheck,
   Coffee,
+  Plug,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -114,6 +115,7 @@ const toolItems = [
   { href: '/notifications', label: 'Bildirimler', icon: Bell },
   { href: '/ai', label: 'AI Asistan', icon: Brain },
   { href: '/reports', label: 'Raporlar', icon: FileText },
+  { href: '/integrations', label: 'Entegrasyonlar (Paraşüt)', icon: Plug },
   { href: '/settings', label: 'Ayarlar', icon: Settings },
 ];
 
