@@ -26,15 +26,21 @@ export async function GET(request: Request) {
   if (conn.company_id) {
     try {
       const find = (f: Record<string, string>) => api(admin, conn as any, `/${conn.company_id}/contacts`, { 'page[size]': '10', ...f });
-      let j: any = tax ? await find({ 'filter[tax_number]': tax }) : { data: [] };
-      // VKN ile bulunamazsa unvan / kısa adla dene
-      for (const nm of [(cu as any).legal_name, (cu as any).name].filter(Boolean)) {
-        if ((j.data || []).length) break;
-        j = await find({ 'filter[name]': String(nm).slice(0, 60) });
+      // Aynı firma Paraşüt'te birden fazla cari olarak açılmış olabilir (müşteri carisi + tedarikçi carisi): VKN ve ad ile ara, birleştir
+      const seen = new Map<string, any>();
+      const add = (j: any) => (j.data || []).forEach((x: any) => seen.set(String(x.id), x));
+      if (tax) add(await find({ 'filter[tax_number]': tax }));
+      const word = normalizeName((cu as any).name || '').split(' ').find(w => w.length >= 3) || '';
+      for (const nm of [word, (cu as any).name, (cu as any).legal_name].filter(Boolean)) {
+        try { add(await find({ 'filter[name]': String(nm).slice(0, 60) })); } catch { /* ad filtresi desteklenmezse geç */ }
       }
-      contacts = (j.data || []).map((x: any) => {
+      const firstTok = word;
+      contacts = Array.from(seen.values()).filter((x: any) => {
+        const a = x.attributes || {}; const t = String(a.tax_number || '').replace(/\D/g, '');
+        return (tax && t === tax) || (!!firstTok && normalizeName(a.name || '').split(' ').includes(firstTok)) || names.has(normalizeName(a.name || ''));
+      }).slice(0, 5).map((x: any) => {
         const a = x.attributes || {};
-        return { id: String(x.id), name: a.name, account_type: a.account_type || null, balance: a.balance ?? null, trl_balance: a.trl_balance ?? null,
+        return { id: String(x.id), name: a.name, tax_number: a.tax_number || null, account_type: a.account_type || null, balance: a.balance ?? null, trl_balance: a.trl_balance ?? null,
           usd_balance: a.usd_balance ?? null, eur_balance: a.eur_balance ?? null, gbp_balance: a.gbp_balance ?? null };
       });
     } catch (e: any) { contactErr = e.message; }
@@ -42,19 +48,21 @@ export async function GET(request: Request) {
   const cids = new Set(contacts.map(c => c.id));
 
   // Bu carinin Paraşüt'teki TÜM açık faturaları (tarih sınırı yok), canlı
-  const live: any[] = []; const liveErr: string[] = [];
+  const live: any[] = []; const liveErr: string[] = []; const recent: any[] = [];
   if (conn.company_id && contacts.length) {
     const kinds = [
       { kind: 'sales_invoice', path: 'sales_invoices', rel: 'contact', filter: 'filter[contact_id]' },
       { kind: 'purchase_bill', path: 'purchase_bills', rel: 'supplier', filter: 'filter[supplier_id]' },
     ];
-    for (const c of contacts.slice(0, 3)) for (const k of kinds) {
+    for (const c of contacts) for (const k of kinds) {
       try {
         for (let page = 1; page <= 4; page++) {
           const j = await api(admin, conn as any, `/${conn.company_id}/${k.path}`, { [k.filter]: c.id, sort: '-issue_date', 'page[size]': '25', 'page[number]': String(page) });
           for (const d of j.data || []) {
             const a = d.attributes || {};
             if (String(d.relationships?.[k.rel]?.data?.id || '') !== c.id) continue;      // filtre desteklenmese de doğru cari
+            const rem0 = Number(a.remaining_in_trl ?? a.remaining) || 0;
+            if (recent.filter(r => r.contact_id === c.id && r.kind === k.kind).length < 8) recent.push({ contact_id: c.id, kind: k.kind, issue_date: String(a.issue_date || '').slice(0, 10), doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.description || null, item_type: a.item_type || null, payment_status: a.payment_status || null, gross: Number(a.gross_total ?? a.total) || 0, remaining: rem0, currency: a.currency || null });
             if (['cancelled', 'canceled', 'estimate'].includes(String(a.item_type))) continue;
             const rem = Number(a.remaining_in_trl ?? a.remaining) || 0;
             if (a.payment_status === 'paid' || Math.abs(rem) < 0.5) continue;
@@ -68,5 +76,5 @@ export async function GET(request: Request) {
     }
   }
   const myBills = (bills.data || []).filter((d: any) => (d.contact_parasut_id && cids.has(String(d.contact_parasut_id))) || (tax && String(d.tax_number || '') === tax) || (names.has(normalizeName(d.contact_name || '')) && (!tax || !d.tax_number)));
-  return NextResponse.json({ connected: true, sync_from: conn.sync_from, contacts, contact_error: contactErr, live: live, live_ok: !!contacts.length && liveErr.length === 0, live_errors: liveErr, documents: [...(sales.data || []), ...myBills] });
+  return NextResponse.json({ connected: true, sync_from: conn.sync_from, contacts, contact_error: contactErr, live, recent, live_ok: !!contacts.length && liveErr.length === 0, live_errors: liveErr, documents: [...(sales.data || []), ...myBills] });
 }

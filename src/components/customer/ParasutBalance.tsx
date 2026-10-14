@@ -12,7 +12,7 @@ const tl = (v: any) => `${Number(v) < 0 ? '-' : ''}₺${formatMoney(Math.abs(Mat
 
 /** Müşteri kartında Paraşüt cari durumu: alacağımız, borcumuz, net ve açık faturalar */
 export default function ParasutBalance({ customerId }: { customerId: string }) {
-  const [d, setD] = useState<{ connected: boolean; documents: PDoc[]; contacts?: any[]; contact_error?: string | null; sync_from?: string; live?: PDoc[]; live_ok?: boolean; live_errors?: string[] } | null>(null);
+  const [d, setD] = useState<{ connected: boolean; documents: PDoc[]; contacts?: any[]; contact_error?: string | null; sync_from?: string; live?: PDoc[]; live_ok?: boolean; live_errors?: string[]; recent?: any[] } | null>(null);
   useEffect(() => { parasutCall(`/api/parasut/balance?customer_id=${customerId}`).then(setD).catch(() => setD(null)); }, [customerId]);
   if (!d?.connected) return null;
   const pc = (d.contacts || []).filter(c => c.trl_balance !== null || c.balance !== null);
@@ -55,6 +55,19 @@ export default function ParasutBalance({ customerId }: { customerId: string }) {
           return <p key={x.id} className="flex justify-between gap-2"><span className="truncate">{x.kind === 'sales_invoice' ? '↗' : '↙'} {x.doc_no || 'Fatura'} <span className="text-slate-400">vade {x.due_date ? new Date(x.due_date).toLocaleDateString('tr-TR') : '-'}</span>{late && <span className="text-red-600"> · {daysSince(x.due_date)} gün gecikti</span>}</span><span className={x.kind === 'sales_invoice' ? 'text-emerald-700' : 'text-amber-700'}>{tl(openTry(x))}</span></p>;
         })}</div>
         </>)}
+      {(d.recent?.length || 0) > 0 && (
+        <details className="mt-2 text-[11px]">
+          <summary className="cursor-pointer text-slate-500">Paraşüt'teki son faturalar (ayrıntı)</summary>
+          <div className="mt-1 space-y-2">{(d.contacts || []).map(c => {
+            const rs = (d.recent || []).filter(r => r.contact_id === c.id);
+            return (<div key={c.id}>
+              <p className="font-medium text-slate-700">{c.name} <span className="font-normal text-slate-400">{c.account_type === 'supplier' ? 'tedarikçi' : c.account_type === 'customer' ? 'müşteri' : c.account_type || ''}{c.tax_number ? ' · VKN ' + c.tax_number : ''} · bakiye {tl(c.trl_balance ?? c.balance)}</span></p>
+              {rs.length === 0 ? <p className="text-slate-400">Fatura yok</p> : rs.map((r, i) => (
+                <p key={i} className="flex justify-between gap-2 text-slate-600"><span className="truncate">{r.kind === 'sales_invoice' ? '↗ Satış' : '↙ Alış'} {r.doc_no || ''} {r.issue_date ? new Date(r.issue_date).toLocaleDateString('tr-TR') : ''} <span className="text-slate-400">{r.item_type || ''} · {r.payment_status || '-'}</span></span><span>{tl(r.gross)}{Math.abs(r.remaining) >= 0.5 ? <span className="text-red-600"> (kalan {tl(r.remaining)})</span> : null}</span></p>))}
+            </div>);
+          })}</div>
+        </details>
+      )}
       <Link href="/integrations" className="mt-2 block text-xs text-indigo-600">Tüm cari bakiyeler →</Link>
     </Card>
   );
