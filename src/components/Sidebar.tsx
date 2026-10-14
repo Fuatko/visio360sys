@@ -50,6 +50,7 @@ import {
   ShieldCheck,
   Coffee,
   Plug,
+  Scale,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -78,6 +79,7 @@ const salesItems = [
   { href: '/quotes', label: 'Teklifler', icon: FileSignature },
   { href: '/orders', label: 'Siparişler', icon: ShoppingCart },
   { href: '/invoices', label: 'Faturalar', icon: Receipt },
+  { href: '/reconciliation', label: 'Sipariş–Fatura Mutabakatı', icon: Scale },
   { href: '/contracts', label: 'Sözleşmeler', icon: ScrollText },
   { href: '/collections', label: 'Tahsilat', icon: Wallet },
   { href: '/dealers', label: 'Bayi Yönetimi', icon: Store },

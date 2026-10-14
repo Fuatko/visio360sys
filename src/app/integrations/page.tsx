@@ -7,6 +7,7 @@ import { Card, Button, Badge, Input, Select } from '@/components/ui';
 import { createClient } from '@/lib/supabase';
 import { formatMoney } from '@/lib/utils';
 import { normalizeName } from '@/lib/crm';
+import { balances, daysSince } from '@/lib/parasut-recon';
 import { Plug, RefreshCw, CheckCircle2, AlertTriangle, ExternalLink, KeyRound, Link2, Unplug, ShieldCheck, Loader2 } from 'lucide-react';
 
 const tl = (v: any) => `${Number(v) < 0 ? '-' : ''}₺${formatMoney(Math.abs(Math.round(Number(v) || 0)))}`;
@@ -25,7 +26,7 @@ export default function IntegrationsPage() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
-  const [tab, setTab] = useState<'sales' | 'costs' | 'unmatched'>('sales');
+  const [tab, setTab] = useState<'sales' | 'costs' | 'unmatched' | 'balances'>('sales');
 
   const call = async (path: string, method = 'POST', body?: any) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -88,6 +89,7 @@ export default function IntegrationsPage() {
     unmatched.forEach(d => { const k = d.tax_number || normalizeName(d.contact_name); const x = m.get(k) || { key: k, name: d.contact_name, tax: d.tax_number, contact_parasut_id: d.contact_parasut_id, ids: [], total: 0 }; x.ids.push(d.id); x.total += Number(d.net_total_try) || 0; m.set(k, x); });
     return Array.from(m.values()).sort((a, b) => b.total - a.total);
   }, [docs]);
+  const bal = useMemo(() => balances(docs), [docs]);
   const cname = (id?: string) => customers.find(c => c.id === id)?.name;
   const ytd = (k: string) => docs.filter(d => d.kind === k && String(d.issue_date).startsWith(String(new Date().getFullYear()))).reduce((a, d) => a + (Number(d.net_total_try) || 0), 0);
 
@@ -174,13 +176,36 @@ export default function IntegrationsPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex rounded-lg border bg-white p-0.5 text-sm">
-                {([['sales', `Satış faturaları (${sales.length})`], ['costs', `Alış ve giderler (${costs.length})`], ['unmatched', `Eşleştir (${unmatchedContacts.length})`]] as const).map(([k, l]) => (
+                {([['sales', `Satış faturaları (${sales.length})`], ['costs', `Alış ve giderler (${costs.length})`], ['balances', `Cari bakiyeler (${bal.length})`], ['unmatched', `Eşleştir (${unmatchedContacts.length})`]] as const).map(([k, l]) => (
                   <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1 ${tab === k ? 'bg-indigo-600 text-white' : 'text-slate-600'}`}>{l}</button>))}
               </div>
-              <Link href="/profitability?tab=parasut" className="ml-auto text-sm text-indigo-600">Fatura bazlı kâr/zarar →</Link>
+              <Link href="/reconciliation" className="ml-auto text-sm text-indigo-600">Sipariş–fatura mutabakatı →</Link>
+              <Link href="/profitability?tab=parasut" className="text-sm text-indigo-600">Fatura bazlı kâr/zarar →</Link>
             </div>
             <Card className="overflow-x-auto p-0">
-              {tab === 'unmatched' ? (
+              {tab === 'balances' ? (
+                bal.length === 0 ? <p className="p-4 text-sm text-slate-500">Açık bakiye yok: tüm satış ve alış faturaları kapanmış.</p> : (<>
+                  <div className="grid grid-cols-2 gap-3 border-b p-3 text-sm md:grid-cols-4">
+                    <div><p className="text-xs text-slate-500">Toplam alacağımız</p><p className="font-bold text-emerald-700">{tl(bal.reduce((a, b) => a + b.receivable, 0))}</p></div>
+                    <div><p className="text-xs text-slate-500">Vadesi geçmiş alacak</p><p className="font-bold text-red-600">{tl(bal.reduce((a, b) => a + b.receivableOverdue, 0))}</p></div>
+                    <div><p className="text-xs text-slate-500">Toplam borcumuz</p><p className="font-bold text-amber-700">{tl(bal.reduce((a, b) => a + b.payable, 0))}</p></div>
+                    <div><p className="text-xs text-slate-500">Vadesi geçmiş borç</p><p className="font-bold text-red-600">{tl(bal.reduce((a, b) => a + b.payableOverdue, 0))}</p></div>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b bg-slate-50 text-left text-xs text-slate-500"><th className="px-3 py-2">Cari</th><th className="text-right">Alacağımız</th><th className="text-right">Vadesi geçmiş</th><th className="text-right">Borcumuz</th><th className="text-right">Vadesi geçmiş</th><th className="text-right">Net</th><th className="pl-4 pr-3">En eski gecikme</th></tr></thead>
+                    <tbody>{bal.map(b => (
+                      <tr key={b.key} className="border-b">
+                        <td className="px-3 py-1.5">{b.customer_id ? <Link href={`/customers/${b.customer_id}`} className="text-indigo-700 hover:underline">{cname(b.customer_id) || b.name}</Link> : b.name}{b.tax && <span className="block font-mono text-[10px] text-slate-400">VKN {b.tax}</span>}</td>
+                        <td className="text-right text-emerald-700">{b.receivable ? tl(b.receivable) : '-'}</td>
+                        <td className="text-right text-xs text-red-600">{b.receivableOverdue ? tl(b.receivableOverdue) : '-'}</td>
+                        <td className="text-right text-amber-700">{b.payable ? tl(b.payable) : '-'}</td>
+                        <td className="text-right text-xs text-red-600">{b.payableOverdue ? tl(b.payableOverdue) : '-'}</td>
+                        <td className={`text-right font-semibold ${b.net >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{tl(b.net)}<span className="block text-[10px] font-normal text-slate-400">{b.net >= 0 ? 'bize borçlu' : 'biz borçluyuz'}</span></td>
+                        <td className="pl-4 pr-3 text-xs">{b.oldestOverdue ? <span className="text-red-600">{daysSince(b.oldestOverdue)} gün</span> : '-'}</td></tr>))}</tbody>
+                  </table>
+                  <p className="p-3 text-[11px] text-slate-500">Açık (ödenmemiş veya kısmi ödenmiş) satış ve alış faturalarının kalan tutarından hesaplanır; {st.sync_from ? new Date(st.sync_from).toLocaleDateString('tr-TR') : 'eşitleme başlangıcı'} öncesi faturalar dahil değildir. Daha eski açık faturalar için yukarıdaki tarihi geriye alıp yeniden eşitleyin.</p>
+                </>)
+              ) : tab === 'unmatched' ? (
                 unmatchedContacts.length === 0 ? <p className="p-4 text-sm text-slate-500">Tüm satış faturaları müşterilerle eşleşmiş. 👍</p> : (
                   <><div className="flex flex-wrap items-center gap-3 border-b bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     <span>Bu cariler sistemde müşteri olarak kayıtlı değil. Var olan bir müşteriye bağlayın ya da Paraşüt bilgileriyle yeni kart açın.</span>

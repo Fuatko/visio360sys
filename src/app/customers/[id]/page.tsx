@@ -11,6 +11,7 @@ import { completeness, findDuplicates, NACE } from '@/lib/crm';
 import Timeline, { TLData } from '@/components/customer/Timeline';
 import CompanyInfo from '@/components/customer/CompanyInfo';
 import Contacts from '@/components/customer/Contacts';
+import ParasutBalance from '@/components/customer/ParasutBalance';
 import { Addresses, AccountTeam, InstalledBase } from '@/components/customer/Related';
 import { ArrowLeft, Star, ShieldAlert, Building2, Sparkles, FileSignature, Target, AlertTriangle, GitMerge, CalendarClock, Network } from 'lucide-react';
 
@@ -172,6 +173,7 @@ export default function CustomerCardPage() {
           <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
             <Timeline data={tld} contacts={rel.contacts} team={team} me={me} onAddActivity={addActivity} />
             <div className="space-y-4">
+              <ParasutBalance customerId={c.id} />
               <Card className={`p-4 ${!c.next_step ? 'border-amber-300' : ''}`}>
                 <p className="flex items-center gap-1 text-sm font-semibold"><CalendarClock className="h-4 w-4 text-indigo-600" />Sonraki adım</p>
                 {c.next_step ? <p className={`mt-1 text-sm ${c.next_step_date && c.next_step_date < new Date().toISOString().slice(0, 10) ? 'text-red-600' : ''}`}>{c.next_step}{c.next_step_date && <span className="block text-xs text-slate-500">{new Date(c.next_step_date).toLocaleDateString('tr-TR')}</span>}</p>
