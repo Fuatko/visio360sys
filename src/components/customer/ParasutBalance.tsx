@@ -12,7 +12,7 @@ const tl = (v: any) => `${Number(v) < 0 ? '-' : ''}₺${formatMoney(Math.abs(Mat
 
 /** Müşteri kartında Paraşüt cari durumu: alacağımız, borcumuz, net ve açık faturalar */
 export default function ParasutBalance({ customerId }: { customerId: string }) {
-  const [d, setD] = useState<{ connected: boolean; documents: PDoc[]; contacts?: any[]; contact_error?: string | null; sync_from?: string; live?: PDoc[]; live_ok?: boolean; live_errors?: string[]; recent?: any[] } | null>(null);
+  const [d, setD] = useState<{ connected: boolean; documents: PDoc[]; contacts?: any[]; contact_error?: string | null; sync_from?: string; live?: PDoc[]; live_ok?: boolean; live_errors?: string[]; recent?: any[]; raw?: Record<string, number> } | null>(null);
   useEffect(() => { parasutCall(`/api/parasut/balance?customer_id=${customerId}`).then(setD).catch(() => setD(null)); }, [customerId]);
   if (!d?.connected) return null;
   const pc = (d.contacts || []).filter(c => c.trl_balance !== null || c.balance !== null);
@@ -20,7 +20,9 @@ export default function ParasutBalance({ customerId }: { customerId: string }) {
 
   const t = new Date().toISOString().slice(0, 10);
   const useLive = !!d.live_ok;
-  const open = (useLive ? (d.live || []) : d.documents).filter(x => Number(x.net_total_try) > 0 && openTry(x) > 0.5)
+  const liveNos = new Set((d.live || []).map(x => `${x.kind}:${x.doc_no}`));
+  const merged = useLive ? [...(d.live || []), ...d.documents.filter(x => !liveNos.has(`${x.kind}:${x.doc_no}`))] : d.documents;
+  const open = merged.filter(x => Number(x.net_total_try) > 0 && openTry(x) > 0.5)
     .sort((a, b) => String(a.due_date || a.issue_date).localeCompare(String(b.due_date || b.issue_date)));
   const rec = open.filter(x => x.kind === 'sales_invoice'), pay = open.filter(x => x.kind === 'purchase_bill');
   const s = (a: PDoc[]) => a.reduce((x, y) => x + openTry(y), 0);
@@ -68,6 +70,7 @@ export default function ParasutBalance({ customerId }: { customerId: string }) {
           })}</div>
         </details>
       )}
+      {d.raw && <p className="mt-1 text-[10px] text-slate-400">Paraşüt'ten okunan: {d.raw.sales_invoice || 0} satış, {d.raw.purchase_bill || 0} alış belgesi · {(d.contacts || []).length} cari</p>}
       <Link href="/integrations" className="mt-2 block text-xs text-indigo-600">Tüm cari bakiyeler →</Link>
     </Card>
   );
