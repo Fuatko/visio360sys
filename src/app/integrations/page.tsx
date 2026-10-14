@@ -29,19 +29,23 @@ export default function IntegrationsPage() {
 
   const call = async (path: string, method = 'POST', body?: any) => {
     const { data: { session } } = await supabase.auth.getSession();
-    const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: body ? JSON.stringify(body) : undefined });
+    let orgId = ''; try { orgId = localStorage.getItem('selectedOrgId') || ''; } catch { /* yok */ }
+    const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}`, ...(orgId ? { 'x-org-id': orgId } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `Hata ${r.status}`);
     return j;
   };
+  const [orgName, setOrgName] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const load = useCallback(async () => {
-    const s = await supabase.rpc('parasut_status');
-    setReady(!s.error); setSt(s.error ? null : s.data);
-    const [d, c] = await Promise.all([
-      supabase.from('parasut_documents').select('*').order('issue_date', { ascending: false }).limit(1000),
-      supabase.from('customers').select('id, name, tax_number').order('name'),
-    ]);
-    setDocs(d.data || []); setCustomers(c.data || []);
+    try {
+      const r = await call('/api/parasut/status', 'GET');
+      setReady(true); setLoadErr(null); setSt(r.status); setDocs(r.documents || []); setCustomers(r.customers || []); setOrgName(r.org_name);
+      if (r.missing_env?.length) setLoadErr('Vercel\'de eksik ayar: ' + r.missing_env.join(', ') + ' — ekleyip Redeploy yapın.');
+    } catch (e: any) {
+      if (/parasut\.sql/.test(e.message)) setReady(false); else setLoadErr(e.message);
+      setSt(st => st ?? { connected: false });
+    }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -64,9 +68,9 @@ export default function IntegrationsPage() {
   const sync = () => run('sync', () => call('/api/parasut/sync'), r => `Eşitlendi (${r.seconds} sn): ${Object.entries(r.counts || {}).map(([k, v]) => `${KIND[k]} ${v}`).join(', ')}${r.matched ? ` · ${r.matched} fatura müşteriyle eşleşti` : ''}${r.errors?.length ? ` · Uyarı: ${r.errors.join(' | ')}` : ''}`);
   const saveSettings = (patch: any) => run('settings', () => call('/api/parasut/settings', 'POST', patch), () => 'Ayar kaydedildi.');
   const disconnect = () => { if (!confirm('Paraşüt bağlantısı kaldırılsın mı? Eşitlenmiş faturalar raporlarda kalır.')) return; run('disc', () => call('/api/parasut/disconnect', 'POST', { purge: false }), () => 'Bağlantı kaldırıldı.'); };
-  const match = async (docId: string, customerId: string) => {
-    const { error } = await supabase.from('parasut_documents').update({ customer_id: customerId || null }).eq('id', docId);
-    if (error) alert(error.message); else setDocs(ds => ds.map(d => (d.id === docId ? { ...d, customer_id: customerId || null } : d)));
+  const matchMany = async (ids: string[], customerId: string) => {
+    try { await call('/api/parasut/match', 'POST', { ids, customer_id: customerId || null }); setDocs(ds => ds.map(d => (ids.includes(d.id) ? { ...d, customer_id: customerId || null } : d))); }
+    catch (e: any) { alert(e.message); }
   };
 
   const sales = docs.filter(d => d.kind === 'sales_invoice');
@@ -86,6 +90,7 @@ export default function IntegrationsPage() {
     <div>
       <Header title="Entegrasyonlar" subtitle="Muhasebe ve diğer sistemlerle bağlantılar" />
       <div className="space-y-4 p-6">
+        {loadErr && <Card className="flex items-center gap-2 border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertTriangle className="h-4 w-4" />{loadErr}</Card>}
         {!ready && <Card className="flex items-center gap-2 border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-4 w-4" /><b>parasut.sql</b> dosyasını Supabase'de çalıştırın.</Card>}
         {msg && <Card className={`flex items-start gap-2 p-3 text-sm ${msg.ok ? 'border-green-200 bg-green-50 text-green-900' : 'border-red-200 bg-red-50 text-red-800'}`}>{msg.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}<span className="break-words">{msg.text}</span></Card>}
 
@@ -95,6 +100,7 @@ export default function IntegrationsPage() {
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 text-lg font-semibold">Paraşüt {st?.connected ? <Badge variant="success">Bağlı</Badge> : <Badge variant="default">Bağlı değil</Badge>}</p>
               <p className="text-sm text-slate-600">Satış ve alış faturaları, maaş, vergi ve banka masrafları her gece otomatik eşitlenir. Satış faturaları vergi numarasıyla müşteri kartlarına bağlanır; Kârlılık ekranında fatura bazlı kâr/zarar görünür.</p>
+              {orgName && <p className="mt-1 text-xs text-slate-500">Bu bağlantı <b>{orgName}</b> kurumu içindir.</p>}
               {st?.connected && <p className="mt-1 text-xs text-slate-500">Firma: <b>{st.company_name || st.company_id || 'seçilmedi'}</b> · Bağlantı: {new Date(st.connected_at).toLocaleDateString('tr-TR')}{st.last_sync_at ? ` · Son eşitleme: ${new Date(st.last_sync_at).toLocaleString('tr-TR')}` : ''}</p>}
             </div>
             {st?.connected && (
@@ -173,7 +179,7 @@ export default function IntegrationsPage() {
                     <thead><tr className="border-b bg-slate-50 text-left text-xs text-slate-500"><th className="px-3 py-2">Paraşüt'teki cari</th><th>VKN</th><th className="text-right">Fatura</th><th className="text-right">Tutar</th><th className="pl-4">Müşteri kartı</th></tr></thead>
                     <tbody>{unmatchedContacts.map(u => (
                       <tr key={u.key} className="border-b"><td className="px-3 py-2 font-medium">{u.name || '-'}</td><td className="font-mono text-xs">{u.tax || '-'}</td><td className="text-right">{u.ids.length}</td><td className="text-right">{tl(u.total)}</td>
-                        <td className="pl-4"><select className="h-8 w-64 rounded border px-2 text-xs" defaultValue="" onChange={async e => { for (const id of u.ids) await match(id, e.target.value); }}>
+                        <td className="pl-4"><select className="h-8 w-64 rounded border px-2 text-xs" defaultValue="" onChange={e => matchMany(u.ids, e.target.value)}>
                           <option value="">Müşteri seçin…</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td></tr>))}</tbody>
                   </table>)
               ) : (

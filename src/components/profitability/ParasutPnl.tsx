@@ -16,10 +16,13 @@ export default function ParasutPnl({ supabase, period, taxRate, orderRevenue }: 
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     (async () => {
-      const s = await supabase.rpc('parasut_status');
-      setConnected(!!s.data?.connected);
-      const { data } = await supabase.from('parasut_documents').select('kind, issue_date, net_total_try, category, customer_id, contact_name').limit(20000);
-      setDocs(data || []);
+      const { data: { session } } = await supabase.auth.getSession();
+      let orgId = ''; try { orgId = localStorage.getItem('selectedOrgId') || ''; } catch { /* yok */ }
+      try {
+        const r = await fetch('/api/parasut/status', { headers: { Authorization: `Bearer ${session?.access_token}`, ...(orgId ? { 'x-org-id': orgId } : {}) } });
+        const j = await r.json();
+        setConnected(!!j.status?.connected); setDocs(r.ok ? j.documents || [] : []);
+      } catch { setDocs([]); }
     })();
   }, []);
   const r = periodRange(period);

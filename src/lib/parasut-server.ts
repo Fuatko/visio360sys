@@ -15,7 +15,8 @@ export const adminClient = () => { const e = parasutEnv(); return createClient(e
 export const authorizeUrl = () =>
   `${API}/oauth/authorize?client_id=${encodeURIComponent(parasutEnv().clientId)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code`;
 
-/** İsteği yapan personelin şirketi ve rolü (bayi kullanıcıları reddedilir) */
+/** İsteği yapan personelin şirketi ve rolü (bayi kullanıcıları reddedilir).
+ *  Süper admin, üst menüden seçtiği kurum adına işlem yapar (x-org-id başlığı). */
 export async function callerOrg(request: Request): Promise<{ orgId: string; userId: string; isAdmin: boolean } | { error: string; status: number }> {
   const e = parasutEnv();
   const token = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
@@ -25,9 +26,20 @@ export async function callerOrg(request: Request): Promise<{ orgId: string; user
   if (!me?.user) return { error: 'Oturum geçersiz', status: 401 };
   const { data: isDealer } = await asUser.rpc('is_dealer_user');
   if (isDealer) return { error: 'Yetkisiz', status: 403 };
-  const { data: prof } = await adminClient().from('users').select('organization_id, role, is_org_admin').eq('id', me.user.id).maybeSingle();
-  if (!prof?.organization_id) return { error: 'Şirket bulunamadı', status: 403 };
-  return { orgId: prof.organization_id, userId: me.user.id, isAdmin: ['admin', 'manager', 'super_admin'].includes(prof.role) || !!prof.is_org_admin };
+  const admin = adminClient();
+  const { data: prof, error: pErr } = await admin.from('users').select('organization_id, role, is_org_admin').eq('id', me.user.id).maybeSingle();
+  if (pErr) return { error: 'Sunucu veritabanına bağlanamadı. Vercel\'deki SUPABASE_SERVICE_ROLE_KEY değerini kontrol edin. (' + pErr.message + ')', status: 500 };
+  if (!prof) return { error: 'Kullanıcı profili bulunamadı', status: 403 };
+  const wanted = (request.headers.get('x-org-id') || '').trim();
+  if (prof.role === 'super_admin') {
+    const orgId = wanted || prof.organization_id;
+    if (!orgId) return { error: 'Üst menüden bir kurum seçin.', status: 400 };
+    const { data: org } = await admin.from('organizations').select('id').eq('id', orgId).maybeSingle();
+    if (!org) return { error: 'Seçilen kurum bulunamadı. Üst menüden kurumu yeniden seçin.', status: 400 };
+    return { orgId, userId: me.user.id, isAdmin: true };
+  }
+  if (!prof.organization_id) return { error: 'Kullanıcınız bir kuruma bağlı değil.', status: 403 };
+  return { orgId: prof.organization_id, userId: me.user.id, isAdmin: ['admin', 'manager'].includes(prof.role) || !!prof.is_org_admin };
 }
 
 // ------------------------------ Token ------------------------------
