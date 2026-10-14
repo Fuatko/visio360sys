@@ -73,12 +73,19 @@ export default function IntegrationsPage() {
     catch (e: any) { alert(e.message); }
   };
 
+  const createCustomers = (list: any[]) => {
+    if (!list.length) return;
+    if (!confirm(list.length === 1 ? `"${list[0].name}" Paraşüt'teki cari bilgileriyle yeni müşteri kartı olarak eklensin mi?` : `${list.length} cari, Paraşüt'teki bilgileriyle (unvan, VKN, vergi dairesi, adres, iletişim) müşteri kartı olarak eklensin ve faturaları bağlansın mı?`)) return;
+    run('create', () => call('/api/parasut/create-customers', 'POST', { groups: list.map(u => ({ contact_parasut_id: u.contact_parasut_id, name: u.name, tax: u.tax, ids: u.ids })) }),
+      r => `${r.created} müşteri kartı oluşturuldu, ${r.linked} fatura bağlandı.${r.errors?.length ? ' Uyarı: ' + r.errors.join(' | ') : ''}`);
+  };
+
   const sales = docs.filter(d => d.kind === 'sales_invoice');
   const costs = docs.filter(d => d.kind !== 'sales_invoice');
   const unmatched = sales.filter(d => !d.customer_id);
   const unmatchedContacts = useMemo(() => {
     const m = new Map<string, any>();
-    unmatched.forEach(d => { const k = d.tax_number || normalizeName(d.contact_name); const x = m.get(k) || { key: k, name: d.contact_name, tax: d.tax_number, ids: [], total: 0 }; x.ids.push(d.id); x.total += Number(d.net_total_try) || 0; m.set(k, x); });
+    unmatched.forEach(d => { const k = d.tax_number || normalizeName(d.contact_name); const x = m.get(k) || { key: k, name: d.contact_name, tax: d.tax_number, contact_parasut_id: d.contact_parasut_id, ids: [], total: 0 }; x.ids.push(d.id); x.total += Number(d.net_total_try) || 0; m.set(k, x); });
     return Array.from(m.values()).sort((a, b) => b.total - a.total);
   }, [docs]);
   const cname = (id?: string) => customers.find(c => c.id === id)?.name;
@@ -175,13 +182,17 @@ export default function IntegrationsPage() {
             <Card className="overflow-x-auto p-0">
               {tab === 'unmatched' ? (
                 unmatchedContacts.length === 0 ? <p className="p-4 text-sm text-slate-500">Tüm satış faturaları müşterilerle eşleşmiş. 👍</p> : (
+                  <><div className="flex flex-wrap items-center gap-3 border-b bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <span>Bu cariler sistemde müşteri olarak kayıtlı değil. Var olan bir müşteriye bağlayın ya da Paraşüt bilgileriyle yeni kart açın.</span>
+                    <Button size="sm" className="ml-auto" disabled={busy === 'create'} onClick={() => createCustomers(unmatchedContacts)}>{busy === 'create' ? 'Ekleniyor…' : `Tümünü müşteri olarak ekle (${unmatchedContacts.length})`}</Button></div>
                   <table className="w-full text-sm">
-                    <thead><tr className="border-b bg-slate-50 text-left text-xs text-slate-500"><th className="px-3 py-2">Paraşüt'teki cari</th><th>VKN</th><th className="text-right">Fatura</th><th className="text-right">Tutar</th><th className="pl-4">Müşteri kartı</th></tr></thead>
+                    <thead><tr className="border-b bg-slate-50 text-left text-xs text-slate-500"><th className="px-3 py-2">Paraşüt'teki cari</th><th>VKN</th><th className="text-right">Fatura</th><th className="text-right">Tutar</th><th className="pl-4">Müşteri kartı</th><th></th></tr></thead>
                     <tbody>{unmatchedContacts.map(u => (
                       <tr key={u.key} className="border-b"><td className="px-3 py-2 font-medium">{u.name || '-'}</td><td className="font-mono text-xs">{u.tax || '-'}</td><td className="text-right">{u.ids.length}</td><td className="text-right">{tl(u.total)}</td>
                         <td className="pl-4"><select className="h-8 w-64 rounded border px-2 text-xs" defaultValue="" onChange={e => matchMany(u.ids, e.target.value)}>
-                          <option value="">Müşteri seçin…</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td></tr>))}</tbody>
-                  </table>)
+                          <option value="">Var olan müşteriye bağla…</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
+                        <td className="px-3"><button className="whitespace-nowrap text-xs font-medium text-indigo-600 hover:underline disabled:opacity-50" disabled={busy === 'create'} onClick={() => createCustomers([u])}>+ Yeni müşteri olarak ekle</button></td></tr>))}</tbody>
+                  </table></>)
               ) : (
                 <table className="w-full text-sm">
                   <thead><tr className="border-b bg-slate-50 text-left text-xs text-slate-500"><th className="px-3 py-2">Tarih</th><th>Tür</th><th>No</th><th>{tab === 'sales' ? 'Müşteri' : 'Tedarikçi / açıklama'}</th>{tab === 'costs' && <th>Kategori</th>}<th className="text-right">Net (₺)</th><th className="text-right">Kalan</th><th className="pl-4">Ödeme</th></tr></thead>

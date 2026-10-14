@@ -165,7 +165,9 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
         await sleep(250);
       }
     } catch (err: any) {
-      result.errors.push(`${src.path}: ${err.message}`);
+      // Maaş/vergi/banka masrafı uçları her Paraşüt hesabında listelenemiyor (404): sessizce atla
+      if (src.kind !== 'sales_invoice' && src.kind !== 'purchase_bill' && /API 404/.test(err.message)) { result.skipped = [...(result.skipped || []), src.kind]; }
+      else result.errors.push(`${src.path}: ${err.message}`);
     }
     result.counts[src.kind] = n;
   }
