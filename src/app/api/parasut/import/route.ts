@@ -111,7 +111,11 @@ export async function POST(request: Request) {
         if (rolesReady) patch.relation_roles = Array.from(new Set([...((cur as any).relation_roles || []), ...roles]));
         if (it.status && (cur as any).status !== 'VIP') patch.status = it.status;
         if (owner && !(cur as any).assigned_to) patch.assigned_to = owner;
-        if (Object.keys(patch).length) { const { error } = await admin.from('customers').update(patch).eq('id', id); if (error) throw error; }
+        if (Object.keys(patch).length) {
+          let { error } = await admin.from('customers').update(patch).eq('id', id);
+          if (error && /check|status/i.test(error.message)) { delete patch.status; ({ error } = await admin.from('customers').update(patch).eq('id', id)); }
+          if (error) throw new Error(error.message);
+        }
         updated++;
       } else {
         const row: any = { organization_id: who.orgId, name: c.short_name || c.name, status: it.status || 'Aktif', customer_type: 'end_customer', assigned_to: owner,
@@ -121,7 +125,11 @@ export async function POST(request: Request) {
         if (ins.error && /column/i.test(ins.error.message)) {
           ins = await admin.from('customers').insert({ organization_id: who.orgId, name: row.name, status: row.status, email: row.email, phone: row.phone, address: row.address, notes: row.notes, assigned_to: owner }).select('id').single();
         }
-        if (ins.error) throw ins.error;
+        if (ins.error && /check|status/i.test(ins.error.message)) {
+          // Durum değeri kabul edilmezse varsayılan durumla dene
+          ins = await admin.from('customers').insert({ ...row, status: 'Aktif' }).select('id').single();
+        }
+        if (ins.error) throw new Error(ins.error.message);
         id = ins.data.id; created++;
       }
       // Ana firma → Ana Firmalarım kaydı

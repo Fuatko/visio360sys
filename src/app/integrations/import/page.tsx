@@ -23,6 +23,7 @@ export default function ParasutImportPage() {
   const [done, setDone] = useState<any>(null);
   const [filter, setFilter] = useState<Filter>('suggested');
   const [q, setQ] = useState('');
+  const [prog, setProg] = useState<{ done: number; total: number } | null>(null);
 
   const load = async () => {
     setErr(null);
@@ -59,12 +60,18 @@ export default function ParasutImportPage() {
     try {
       const items = selected.map((r: any) => ({ contact: r, roles: picks[r.id].roles, status: picks[r.id].status, existing_id: r.existing?.id || null, supplier_id: r.supplier?.id || null }));
       let agg = { created: 0, updated: 0, principals: 0, linked: 0, errors: [] as string[] };
-      for (let i = 0; i < items.length; i += 40) {
-        const r = await parasutCall('/api/parasut/import', 'POST', { items: items.slice(i, i + 40), assigned_to: owner || null });
-        agg = { created: agg.created + r.created, updated: agg.updated + r.updated, principals: agg.principals + r.principals, linked: agg.linked + r.linked, errors: [...agg.errors, ...(r.errors || [])] };
+      setProg({ done: 0, total: items.length });
+      for (let i = 0; i < items.length; i += 10) {
+        const part = items.slice(i, i + 10);
+        try {
+          const r = await parasutCall('/api/parasut/import', 'POST', { items: part, assigned_to: owner || null });
+          agg = { created: agg.created + r.created, updated: agg.updated + r.updated, principals: agg.principals + r.principals, linked: agg.linked + r.linked, errors: [...agg.errors, ...(r.errors || [])] };
+        } catch (e: any) { agg.errors.push(`${part.map((x: any) => x.contact.name).slice(0, 2).join(', ')}…: ${e.message}`); }
+        setProg({ done: Math.min(i + 10, items.length), total: items.length });
       }
-      setDone(agg); await load();
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+      setDone(agg); window.scrollTo({ top: 0, behavior: 'smooth' });
+      load();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); setProg(null); }
   };
 
   if (err && !data) return <div><Header title="Paraşüt'ten aktar" /><div className="p-6"><Card className="border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</Card></div></div>;
@@ -85,10 +92,11 @@ export default function ParasutImportPage() {
         {done && (
           <Card className="border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
             <p className="flex items-center gap-2 font-semibold"><CheckCircle2 className="h-4 w-4" />Aktarım tamamlandı</p>
-            <p className="mt-1">{done.created} yeni müşteri kartı · {done.updated} kart güncellendi · {done.principals} ana firma kaydı · {done.linked} fatura kartlara bağlandı</p>
-            {done.errors.length > 0 && <p className="mt-1 text-xs text-red-700">Hatalar: {done.errors.join(' | ')}</p>}
+            <p className="mt-1">{done.created + done.updated === 0 && done.errors.length === 0 ? 'Hiçbir kayıt değişmedi. ' : ''}{done.created} yeni müşteri kartı · {done.updated} kart güncellendi · {done.principals} ana firma kaydı · {done.linked} fatura kartlara bağlandı</p>
+            {done.errors.length > 0 && <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-700"><p className="font-semibold">{done.errors.length} kayıt aktarılamadı:</p>{done.errors.slice(0, 15).map((x: string, i: number) => <p key={i}>• {x}</p>)}</div>}
             <p className="mt-2 flex flex-wrap gap-3 text-xs"><Link href="/customers" className="font-medium underline">Müşteriler</Link><Link href="/suppliers" className="font-medium underline">Ana Firmalarım</Link><Link href="/business-lines" className="font-medium underline">İş Kolları & Bayi İşleri</Link><Link href="/reconciliation" className="font-medium underline">Mutabakat</Link></p>
           </Card>)}
+        {prog && <Card className="border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800"><p className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Aktarılıyor: {prog.done} / {prog.total}</p><div className="mt-2 h-2 rounded bg-indigo-100"><div className="h-2 rounded bg-indigo-600 transition-all" style={{ width: `${Math.round(100 * prog.done / Math.max(1, prog.total))}%` }} /></div></Card>}
         {err && <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</Card>}
         {!data.roles_ready && <Card className="border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Rollerin kaydedilmesi için önce <b>parasut-matris.sql</b> dosyasını Supabase'de çalıştırın. Çalıştırmadan aktarırsanız kartlar açılır ama roller boş kalır.</Card>}
 
