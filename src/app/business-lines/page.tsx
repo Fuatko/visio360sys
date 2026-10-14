@@ -94,7 +94,8 @@ export default function BusinessLinesPage() {
     });
     const candidates = (p: any) => { const ln = lineOfBuy(p); return sales.filter(s => !linkedSales.has(s.id) && (!ln || lineOfSale(s) === ln) && Math.abs(days(p.issue_date, s.issue_date)) <= 120).slice(0, 40); };
 
-    return { lines, general, buyCats, salesCats, principals, jobsBuys, byBuy, docById, suggestions, candidates, lineOfBuy, supKey, totalSales: lines.reduce((a, x) => a + x.sales, 0), totalBuys: lines.reduce((a, x) => a + x.buys, 0) };
+    const openBuys = buys.filter(d => d.payment_status !== 'paid' && Math.abs(n(d.remaining)) >= 0.5);
+    return { payable: openBuys.reduce((a, d) => a + Math.abs(n(d.remaining)), 0), payableN: openBuys.length, lines, general, buyCats, salesCats, principals, jobsBuys, byBuy, docById, suggestions, candidates, lineOfBuy, supKey, totalSales: lines.reduce((a, x) => a + x.sales, 0), totalBuys: lines.reduce((a, x) => a + x.buys, 0) };
   }, [data, year, sup]);
 
   if (err && !data) return <div><Header title="İş Kolları & Bayi İşleri" /><div className="p-6"><Card className="border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</Card></div></div>;
@@ -124,7 +125,7 @@ export default function BusinessLinesPage() {
           <Card className="p-4"><p className="text-xs text-slate-500">Satış (KDV hariç)</p><p className="text-xl font-bold text-emerald-700">{tl(v.totalSales)}</p></Card>
           <Card className="p-4"><p className="text-xs text-slate-500">İş koluna bağlı alışlar</p><p className="text-xl font-bold text-amber-700">{tl(v.totalBuys)}</p></Card>
           <Card className="p-4"><p className="text-xs text-slate-500">Brüt kâr (doğrudan alışlar düşülmüş)</p><p className={`text-xl font-bold ${gp >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>{tl(gp)}</p><p className="text-xs text-slate-400">marj {pct(gp, v.totalSales)} · genel gider sonrası {tl(gp - (Object.values(v.general) as number[]).reduce((a, x) => a + x, 0))}</p></Card>
-          <Card className="p-4"><p className="text-xs text-slate-500">Genel gider (iş koluna bağlanmamış)</p><p className="text-xl font-bold">{tl(Object.values(v.general).reduce((a: number, x: any) => a + x, 0))}</p><p className="text-xs text-slate-400">{Object.keys(v.general).length} kategori</p></Card>
+          <Card className={`p-4 ${v.payable >= 0.5 ? 'border-red-200' : ''}`}><p className="text-xs text-slate-500">Ödeyeceğimiz (açık alış faturaları)</p><p className={`text-xl font-bold ${v.payable >= 0.5 ? 'text-red-600' : 'text-slate-700'}`}>{tl(v.payable)}</p><p className="text-xs text-slate-400">{v.payable >= 0.5 ? `${v.payableN} fatura · firma bazında: Ana firmalar sekmesi` : 'Paraşüt\'te ödenmemiş alış faturası yok'}</p></Card>
         </div>
 
         {tab === 'lines' && (<>

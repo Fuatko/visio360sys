@@ -151,7 +151,7 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
             net_total: net === null ? null : sign * net, vat_total: num(a.total_vat) === null ? null : sign * Number(a.total_vat),
             gross_total: num(a.gross_total ?? a.total) === null ? null : sign * Number(a.gross_total ?? a.total),
             net_total_try: net === null ? null : sign * net * (cur === 'TRY' ? 1 : rate),
-            remaining: num(a.remaining_in_trl ?? a.remaining), payment_status: a.payment_status || null, synced_at: new Date().toISOString(),
+            remaining: (a.remaining_in_trl ?? a.remaining) != null ? num(a.remaining_in_trl ?? a.remaining) : (a.payment_status && a.payment_status !== 'paid' ? num(a.gross_total ?? a.total) : null), payment_status: a.payment_status || null, synced_at: new Date().toISOString(),
           });
         }
         if (rows.length) {

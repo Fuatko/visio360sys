@@ -64,7 +64,9 @@ export async function GET(request: Request) {
             const a = d.attributes || {};
             const relId = d.relationships?.[k.rel]?.data?.id;
             if (relId !== undefined && relId !== null && String(relId) !== c.id) continue;   // filtre desteklenmese de doğru cari
-            const rem0 = Number(a.remaining_in_trl ?? a.remaining) || 0;
+            const remRaw = a.remaining_in_trl ?? a.remaining;
+            // Kalan alanı gelmezse ödenmemiş belgede toplam tutar açık sayılır
+            const rem0 = remRaw != null ? Number(remRaw) || 0 : (a.payment_status && a.payment_status !== 'paid' ? Number(a.gross_total ?? a.total) || 0 : 0);
             if (recent.filter(r => r.contact_id === c.id && r.kind === k.kind).length < 8) recent.push({ contact_id: c.id, kind: k.kind, issue_date: String(a.issue_date || '').slice(0, 10), doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.description || null, item_type: a.item_type || null, payment_status: a.payment_status || null, gross: Number(a.gross_total ?? a.total) || 0, remaining: rem0, currency: a.currency || null });
             if (['cancelled', 'canceled', 'estimate'].includes(String(a.item_type))) continue;
             {
@@ -74,7 +76,7 @@ export async function GET(request: Request) {
               all.push({ kind: k.kind, contact_id: c.id, issue_date: String(a.issue_date || '').slice(0, 10) || null, category: cat || null,
                 net_try: sg * net * (cur === 'TRY' ? 1 : rate), open_try: a.payment_status === 'paid' ? 0 : Math.abs(rem0) });
             }
-            const rem = Number(a.remaining_in_trl ?? a.remaining) || 0;
+            const rem = rem0;
             if (a.payment_status === 'paid' || Math.abs(rem) < 0.5) continue;
             live.push({ id: `live-${k.kind}-${d.id}`, kind: k.kind, doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.invoice_no || a.description || null,
               issue_date: String(a.issue_date || '').slice(0, 10) || null, due_date: String(a.due_date || '').slice(0, 10) || null, item_type: a.item_type || null,
