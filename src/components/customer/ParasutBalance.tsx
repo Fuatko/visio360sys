@@ -37,6 +37,7 @@ export default function ParasutBalance({ customerId }: { customerId: string }) {
           {pc.length > 1 && <div className="mt-1 space-y-0.5 text-[11px] text-slate-500">{pc.map(c => <p key={c.id} className="flex justify-between gap-2"><span className="truncate">{c.name}{c.account_type === 'supplier' ? ' (tedarikçi)' : c.account_type === 'customer' ? ' (müşteri)' : ''}</span><span>{tl(c.trl_balance ?? c.balance)}</span></p>)}</div>}
         </div>
       )}
+      {!pc.length && !d.contact_error && <p className="mt-2 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800">Paraşüt'te bu VKN veya unvanla cari bulunamadı. Kartın Firma bilgileri sekmesindeki vergi numarasını Paraşüt'tekiyle karşılaştırın.</p>}
       {d.contact_error && <p className="mt-1 text-[10px] text-slate-400">Paraşüt carisi okunamadı: {d.contact_error}</p>}
       {!open.length ? <p className="mt-2 text-xs text-slate-500">{d.sync_from ? new Date(d.sync_from).toLocaleDateString('tr-TR') + ' sonrası eşitlenen' : 'Eşitlenen'} faturalarda açık kalem yok.</p> : (<>
         <div className="mt-2 grid grid-cols-2 gap-2 text-sm">

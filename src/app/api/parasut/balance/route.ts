@@ -25,9 +25,13 @@ export async function GET(request: Request) {
   let contacts: any[] = []; let contactErr: string | null = null;
   if (conn.company_id) {
     try {
-      const q: Record<string, string> = { 'page[size]': '10' };
-      if (tax) q['filter[tax_number]'] = tax; else q['filter[name]'] = (cu as any).name;
-      const j = await api(admin, conn as any, `/${conn.company_id}/contacts`, q);
+      const find = (f: Record<string, string>) => api(admin, conn as any, `/${conn.company_id}/contacts`, { 'page[size]': '10', ...f });
+      let j: any = tax ? await find({ 'filter[tax_number]': tax }) : { data: [] };
+      // VKN ile bulunamazsa unvan / kısa adla dene
+      for (const nm of [(cu as any).legal_name, (cu as any).name].filter(Boolean)) {
+        if ((j.data || []).length) break;
+        j = await find({ 'filter[name]': String(nm).slice(0, 60) });
+      }
       contacts = (j.data || []).map((x: any) => {
         const a = x.attributes || {};
         return { id: String(x.id), name: a.name, account_type: a.account_type || null, balance: a.balance ?? null, trl_balance: a.trl_balance ?? null,
