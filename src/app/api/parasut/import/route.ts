@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 // Gider carisi sayılan kategoriler (kira, yemek, yakıt vb.) — bunlar firmaya rol vermez
-const EXPENSE = /(yemek|yak[ıi]t|konaklama|u[çc]u[şs]|spor|kira|ara[çc]|ofis|k[ıi]rtasiye|telefon|internet|elektrik|su |do[ğg]algaz|aidat|vergi|sgk|maa[şs]|banka|muhasebe|kargo|otopark|ula[şs][ıi]m|seyahat|e[ğg]lence|temizlik)/i;
+const EXPENSE_RE = /(yemek|yak[ıi]t|konaklama|u[çc]u[şs]|spor|kira|ara[çc]|ofis|demirba[şs]|k[ıi]rtasiye|telefon|internet|elektrik|do[ğg]algaz|aidat|vergi|sgk|maa[şs]|banka|muhasebe|kargo|otopark|ula[şs][ıi]m|seyahat|e[ğg]lence|temizlik|e[ğg]itim gider|bilgisayar|donan[ıi]m|kategorisiz)/;
+const EXPENSE = { test: (k: string) => EXPENSE_RE.test(String(k || '').toLocaleLowerCase('tr')) };
 
 /** Paraşüt carileri + hareket özetleri + yazılımdaki karşılıkları + önerilen atama */
 export async function GET(request: Request) {
@@ -66,12 +67,14 @@ export async function GET(request: Request) {
     else if (s.nb) roles.push('supplier');
     const expenseOnly = !s.ns && s.nb > 0 && bizBuy === 0;
     const active = !!s.last && s.last >= yearAgo;
-    const reason = expenseOnly ? 'Yalnızca gider faturası (' + Object.keys(s.buyCats).join(', ') + ')'
+    // Daha önce yanlışlıkla ana firma yapılmış gider carisi: rolü düzeltmeyi öner
+    const fixRole = !!ex && (ex.relation_roles || []).includes('principal') && bizBuy === 0;
+    const reason = fixRole ? 'Ana firma rolü kaldırılacak: yalnızca gider faturası (' + Object.keys(s.buyCats).join(', ') + ')' : expenseOnly ? 'Yalnızca gider faturası (' + Object.keys(s.buyCats).join(', ') + ')'
       : s.ns && bizBuy ? 'Hem satış yapıyorsunuz hem iş alışı var' : s.ns ? 'Satış faturası var' : bizBuy ? 'İş alışı var (' + Object.keys(s.buyCats).filter(k => !EXPENSE.test(k)).join(', ') + ')' : 'Bu dönemde hareket yok';
     return {
       ...c, activity: { sales: s.sales, ns: s.ns, buys: s.buys, nb: s.nb, last: s.last, saleCats: s.saleCats, buyCats: s.buyCats },
       existing: ex ? { id: ex.id, name: ex.name, roles: ex.relation_roles || [], status: ex.status } : null, supplier: sup ? { id: sup.id, name: sup.name } : null,
-      suggest: { import: !expenseOnly && (s.ns > 0 || bizBuy > 0), roles: Array.from(new Set([...(ex?.relation_roles || []), ...roles])), status: active ? (s.sales > 0 ? 'Aktif' : 'Aktif') : (s.ns || s.nb ? 'Pasif' : 'Potansiyel'), reason },
+      suggest: { import: (!expenseOnly && (s.ns > 0 || bizBuy > 0)) || fixRole, roles: Array.from(new Set([...((ex?.relation_roles || []) as string[]).filter(r => r === 'partner' || r === 'customer'), ...roles])), status: active ? (s.sales > 0 ? 'Aktif' : 'Aktif') : (s.ns || s.nb ? 'Pasif' : 'Potansiyel'), reason },
     };
   }).sort((a, b) => (b.activity.sales + b.activity.buys) - (a.activity.sales + a.activity.buys));
 
@@ -108,7 +111,7 @@ export async function POST(request: Request) {
         if (!cur) throw new Error('Kart bulunamadı');
         const patch: any = {};
         Object.entries(base).forEach(([k, v]) => { if (v && !(cur as any)[k] && k in (cur as any)) patch[k] = v; });
-        if (rolesReady) patch.relation_roles = Array.from(new Set([...((cur as any).relation_roles || []), ...roles]));
+        if (rolesReady) patch.relation_roles = roles;   // ekranda mevcut roller önceden işaretli gelir; kullanıcının son seçimi geçerli
         if (it.status && (cur as any).status !== 'VIP') patch.status = it.status;
         if (owner && !(cur as any).assigned_to) patch.assigned_to = owner;
         if (Object.keys(patch).length) {
