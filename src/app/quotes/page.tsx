@@ -5,6 +5,9 @@ import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Sel
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
 import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target, ClipboardCheck, GitBranch, History, ShieldCheck, Link2, Copy, MessageCircle, Mail, Settings2, ExternalLink } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import QuoteAttachments from '@/components/quotes/QuoteAttachments';
+import QuoteFromFile, { type ParsedQuote } from '@/components/quotes/QuoteFromFile';
+import { attachToQuote } from '@/lib/quote-files';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { createOrderFromQuote } from '@/lib/sales-flow';
@@ -141,7 +144,9 @@ export default function QuotesPage() {
     discount: number;
     tax_rate: number;
     note?: string;
+    description?: string;
   }[]>([]);
+  const [pendingFile, setPendingFile] = useState<ParsedQuote['file'] | null>(null);
 
   const supabase = createClient();
   const pricing = useDealerPricing(supabase);
@@ -252,6 +257,23 @@ export default function QuotesPage() {
     setPaymentTerm(30);
     setCurrency('TRY'); setExRate(1); setRateDate(null);
     if (!fx) getRates().then(r => r && setFx(r));
+    setPendingFile(null);
+    setModalOpen(true);
+  };
+
+  // Word / PDF teklifinden okunan bilgilerle formu aç (fiyatlar belgedeki para biriminde kalır)
+  const applyParsed = async (q: ParsedQuote) => {
+    setFormData({ customer_id: q.customer_id, subject: q.subject || '', valid_until: q.valid_until || new Date(Date.now() + 30 * 864e5).toISOString().split('T')[0], notes: q.notes || '', discount: Number(q.discount) || 0 });
+    setItems(q.items.length ? q.items.map(it => ({ ...it })) : [{ product_id: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 20 }]);
+    setOpportunityLink(null); setRevisionSource(null); setRevisionReason('');
+    setPaymentTerm(q.payment_term_days ?? pricing.defaultTerm(q.customer_id) ?? 30);
+    const cur = (q.currency || 'TRY').toUpperCase();
+    if (cur === 'TRY') { setCurrency('TRY'); setExRate(1); setRateDate(null); }
+    else {
+      const rates = fx || await getRates(); if (!fx && rates) setFx(rates);
+      setCurrency(cur); setExRate(toTry(rates, cur) || 1); setRateDate(rates?.date || null);
+    }
+    setPendingFile(q.file);
     setModalOpen(true);
   };
 
@@ -480,9 +502,22 @@ export default function QuotesPage() {
         discount: item.discount,
         tax_rate: item.tax_rate,
         total: item.quantity * item.unit_price * (1 - item.discount / 100),
+        ...(item.description ? { description: item.description } : {}),
       }));
 
-      { const { error: dbErr } = await supabase.from('quote_items').insert(cleanPayload(quoteItems)); if (dbErr) throw dbErr; }
+      {
+        let { error: dbErr } = await supabase.from('quote_items').insert(cleanPayload(quoteItems));
+        if (dbErr && /description/i.test(dbErr.message)) {   // teklif-dosya.sql henüz çalıştırılmadıysa açıklamasız kaydet
+          ({ error: dbErr } = await supabase.from('quote_items').insert(cleanPayload(quoteItems.map(({ description, ...r }: any) => r))));
+        }
+        if (dbErr) throw dbErr;
+      }
+
+      // Word / PDF'ten oluşturulduysa kaynak dosyayı teklife ekle
+      if (pendingFile) {
+        try { await attachToQuote(supabase, quote.id, pendingFile, 'offer'); } catch (e) { console.warn('Dosya eklenemedi', e); }
+        setPendingFile(null);
+      }
 
       // Fırsat erken aşamadaysa "Teklif" aşamasına taşı
       if (opportunityLink && ['Keşif', ''].includes(opportunityLink.stage || '')) {
@@ -694,6 +729,7 @@ export default function QuotesPage() {
             <Button variant="secondary" onClick={fetchData}>
               <RefreshCw className="h-4 w-4" />
             </Button>
+            <QuoteFromFile supabase={supabase} customers={customers} products={products} onApply={applyParsed} onCatalogChanged={fetchData} />
             <Button onClick={openModal}>
               <Plus className="h-4 w-4" /> Yeni Teklif
             </Button>
@@ -939,6 +975,10 @@ export default function QuotesPage() {
                           <option key={p.id} value={p.id}>{p.name} - {money(p.price, (p as any).currency)}</option>
                         ))}
                       </select>
+                      {item.description !== undefined && (
+                        <input value={item.description} onChange={(e) => setItems(l => l.map((x, i) => i === index ? { ...x, description: e.target.value } : x))}
+                          className="mt-1 w-full px-3 py-1.5 rounded border border-slate-200 text-xs" placeholder="Kalem açıklaması" />
+                      )}
                     </div>
                     <input
                       type="number"
@@ -1034,9 +1074,9 @@ export default function QuotesPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setDetailModalOpen(false)}>Kapat</Button>
-            <Button variant="secondary" onClick={printQuote}>
-              <Printer className="h-4 w-4" /> Yazdır
-            </Button>
+            {selectedQuote && <Button onClick={() => window.open(`/quotes/${selectedQuote.id}/print`, '_blank')}>
+              <Printer className="h-4 w-4" /> Kurumsal PDF
+            </Button>}
           </>
         }
       >
@@ -1134,6 +1174,8 @@ export default function QuotesPage() {
             <p className="text-sm text-slate-500 text-center">
               Bu teklif {formatDate(selectedQuote.valid_until)} tarihine kadar geçerlidir.
             </p>
+
+            <QuoteAttachments supabase={supabase} quoteId={selectedQuote.id} />
 
             {/* ISO kayıtları (yazdırmada gizli) */}
             <div className="space-y-3 border-t pt-4 print:hidden">

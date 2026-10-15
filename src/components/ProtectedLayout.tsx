@@ -75,6 +75,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   if (publicRoutes.includes(pathname) || pathname.startsWith('/portal') || isExternal(pathname)) {
     return <>{children}</>;
   }
+  // Yazdırma / PDF sayfaları: oturum gerekli, menü ve üst bar yok
+  if (pathname.endsWith('/print')) return <>{children}</>;
 
   return (
     <AuthProvider>

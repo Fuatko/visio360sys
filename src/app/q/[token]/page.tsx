@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import { CheckCircle2, XCircle, MessageSquare, Printer, Phone, Mail, Clock, FileText, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, MessageSquare, Printer, Phone, Mail, Clock, FileText, AlertTriangle, Download } from 'lucide-react';
 
 const n = (v: any) => Number(v) || 0;
 const SYM: Record<string, string> = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
@@ -22,6 +22,7 @@ export default function PublicQuotePage() {
   const [done, setDone] = useState<string | null>(null);
   const viewId = useRef<string | null>(null);
   const printed = useRef(false);
+  const [files, setFiles] = useState<any[]>([]);
 
   // Okuma takibi: yalnızca sekme görünürken geçen süre ve en fazla kaydırma oranı
   useEffect(() => {
@@ -76,7 +77,10 @@ export default function PublicQuotePage() {
   };
   useEffect(() => {
     const preview = new URLSearchParams(window.location.search).get('preview') === '1';
-    if (/^[0-9a-f-]{36}$/i.test(String(token))) load(!preview); else setQ(null);
+    if (/^[0-9a-f-]{36}$/i.test(String(token))) {
+      load(!preview);
+      fetch(`/api/quote-files/public?token=${token}`).then(r => r.json()).then(d => setFiles(d.files || [])).catch(() => {});
+    } else setQ(null);
   }, [token]);
 
   const submit = async () => {
@@ -183,6 +187,18 @@ export default function PublicQuotePage() {
             </div>
 
             {q.notes && <div className="rounded-lg bg-slate-50 p-3 text-sm"><p className="mb-1 text-xs font-semibold uppercase text-slate-500">Koşullar ve notlar</p><p className="whitespace-pre-wrap">{q.notes}</p></div>}
+
+            {files.length > 0 && (
+              <div className="rounded-lg border p-3 text-sm print:hidden">
+                <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Teklif dokümanları</p>
+                <div className="space-y-1.5">{files.map(f => (
+                  <a key={f.id} href={`/api/quote-files/public?token=${token}&id=${f.id}`} target="_blank" rel="noopener" className="flex items-center gap-2 rounded bg-slate-50 px-3 py-2 hover:bg-slate-100">
+                    <FileText className="h-4 w-4 text-slate-500" /><span className="min-w-0 flex-1 truncate">{f.file_name}</span>
+                    {f.size_bytes ? <span className="text-xs text-slate-400">{(f.size_bytes / 1048576 >= 1 ? (f.size_bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(f.size_bytes / 1024)) + ' KB')}</span> : null}
+                    <Download className="h-4 w-4 text-indigo-600" />
+                  </a>))}</div>
+              </div>
+            )}
 
             {canRespond && !done && (
               <div className="space-y-3 border-t pt-5 print:hidden">
