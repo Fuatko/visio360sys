@@ -126,9 +126,16 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
     let page = 1, n = 0, done = false;
     try {
       while (!done && page <= 200 && Date.now() - started < 240_000) {
-        const j = await api(admin, c, `/${c.company_id}/${src.path}`, { sort: '-issue_date', 'page[size]': '25', 'page[number]': String(page), include: src.include });
+        const withLines = (src.kind === 'sales_invoice' || src.kind === 'purchase_bill') && result.lines !== false;
+        let j: any;
+        try { j = await api(admin, c, `/${c.company_id}/${src.path}`, { sort: '-issue_date', 'page[size]': '25', 'page[number]': String(page), include: withLines ? `${src.include},details,details.product` : src.include }); }
+        catch (e: any) {
+          if (!withLines || !/API 400/.test(e.message)) throw e;
+          result.lines = false;   // bu hesapta kalem bilgisi listelenemiyor: kalemsiz devam
+          j = await api(admin, c, `/${c.company_id}/${src.path}`, { sort: '-issue_date', 'page[size]': '25', 'page[number]': String(page), include: src.include });
+        }
         const inc = new Map<string, any>((j.included || []).map((x: any) => [`${x.type}:${x.id}`, x]));
-        const rows: any[] = [];
+        const rows: any[] = []; const lineMap = new Map<string, any[]>();
         for (const d of j.data || []) {
           const a = d.attributes || {};
           const issue = String(a.issue_date || '').slice(0, 10);
@@ -142,6 +149,15 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
           const cur = a.currency === 'TRL' || !a.currency ? 'TRY' : a.currency;
           const rate = num(a.exchange_rate) || 1;
           const net = num(a.net_total ?? a.net_amount ?? a.total ?? a.amount);
+          const dets = (d.relationships?.details?.data || []).map((r: any) => inc.get(`${r.type}:${r.id}`)).filter(Boolean);
+          if (dets.length) lineMap.set(String(d.id), dets.map((x: any) => {
+            const xa = x.attributes || {}; const pr = x.relationships?.product?.data; const p = pr ? inc.get(`${pr.type}:${pr.id}`) : null;
+            const rate0 = num(a.exchange_rate) || 1; const cur0 = a.currency === 'TRL' || !a.currency ? 'TRY' : a.currency;
+            return { parasut_detail_id: String(x.id), description: xa.description || null, product_parasut_id: pr?.id ? String(pr.id) : null,
+              product_name: p?.attributes?.name || null, product_code: p?.attributes?.code || null, quantity: num(xa.quantity), unit_price: num(xa.unit_price),
+              discount_pct: xa.discount_type === 'percentage' ? num(xa.discount_value) : null, vat_rate: num(xa.vat_rate),
+              net_total_try: num(xa.net_total) === null ? null : sign * Number(xa.net_total) * (cur0 === 'TRY' ? 1 : rate0) };
+          }));
           rows.push({
             organization_id: orgId, kind: src.kind, parasut_id: String(d.id),
             doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.invoice_no || null,
@@ -155,8 +171,15 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
           });
         }
         if (rows.length) {
-          const { error } = await admin.from('parasut_documents').upsert(rows, { onConflict: 'organization_id,kind,parasut_id' });
+          const { data: saved, error } = await admin.from('parasut_documents').upsert(rows, { onConflict: 'organization_id,kind,parasut_id' }).select('id, parasut_id');
           if (error) throw new Error('Kayıt hatası: ' + error.message);
+          if (lineMap.size && result.lines_table !== false) {
+            const lines = (saved || []).flatMap((sv: any) => (lineMap.get(String(sv.parasut_id)) || []).map(l => ({ ...l, organization_id: orgId, document_id: sv.id })));
+            if (lines.length) {
+              const le = await admin.from('parasut_document_lines').upsert(lines, { onConflict: 'document_id,parasut_detail_id' });
+              if (le.error) result.lines_table = false; else result.line_count = (result.line_count || 0) + lines.length;
+            }
+          }
           n += rows.length;
         }
         const totalPages = Number(j.meta?.total_pages) || 1;

@@ -8,16 +8,17 @@ export async function GET(request: Request) {
   const who = await callerOrg(request);
   if ('error' in who) return NextResponse.json({ error: who.error }, { status: who.status });
   const admin = adminClient();
-  const [docs, links, map, cust, conn] = await Promise.all([
+  const [docs, links, map, cust, conn, lines] = await Promise.all([
     admin.from('parasut_documents').select('id, kind, doc_no, issue_date, contact_name, contact_parasut_id, tax_number, customer_id, category, net_total_try, payment_status, remaining, description')
       .eq('organization_id', who.orgId).in('kind', ['sales_invoice', 'purchase_bill']).order('issue_date', { ascending: false }).limit(5000),
     admin.from('parasut_doc_links').select('id, purchase_doc_id, sales_doc_id').eq('organization_id', who.orgId),
     admin.from('parasut_category_map').select('purchase_category, business_line').eq('organization_id', who.orgId),
     admin.from('customers').select('id, name, tax_number, relation_roles').eq('organization_id', who.orgId),
     admin.from('parasut_connections').select('sync_from, last_sync_at').eq('organization_id', who.orgId).maybeSingle(),
+    admin.from('parasut_document_lines').select('document_id, description, product_name, quantity, net_total_try').eq('organization_id', who.orgId).limit(20000),
   ]);
   return NextResponse.json({
-    ready: !links.error && !map.error, documents: docs.data || [], links: links.data || [], map: map.data || [],
+    ready: !links.error && !map.error, documents: docs.data || [], lines: lines.error ? [] : lines.data || [], links: links.data || [], map: map.data || [],
     customers: cust.error ? [] : cust.data || [], sync_from: conn.data?.sync_from || null, last_sync_at: conn.data?.last_sync_at || null,
   });
 }

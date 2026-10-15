@@ -27,6 +27,21 @@ export default function ReconciliationPage() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const buildOrders = async (ids?: string[]) => {
+    if (!confirm(`${ids ? ids.length : 'Siparişi olmayan tüm'} Paraşüt faturası için yazılımda sipariş oluşturulsun mu?\n\n• Sipariş tarihi = fatura tarihi, durum = Teslim edildi\n• Kalemler faturadaki ürün/hizmet satırlarından gelir (ürün kataloğunda yoksa eklenir)\n• Temsilci = müşterinin sorumlusu\n• Sipariş ile fatura otomatik eşleşir\n\nParaşüt'te hiçbir şey değişmez.`)) return;
+    setBusy('build'); setMsg(null);
+    try {
+      let total = 0, items = 0; const errs: string[] = [];
+      for (let i = 0; i < 20; i++) {
+        const r = await parasutCall('/api/parasut/build', 'POST', { action: 'orders', ids });
+        total += r.created; items += r.items; errs.push(...(r.errors || []));
+        if (ids || !r.created || r.created < 500) break;
+      }
+      setMsg(`${total} sipariş oluşturuldu (${items} kalem) ve faturalarla eşleştirildi.${errs.length ? ' Hatalar: ' + errs.slice(0, 5).join(' | ') : ''}`);
+      await load();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(null); }
+  };
+
   const link = async (links: { doc_ids: string[]; order_id: string | null }[], key: string, text: string) => {
     setBusy(key); setMsg(null);
     try { await parasutCall('/api/parasut/reconcile', 'POST', { links }); setMsg(text); await load(); }
@@ -137,6 +152,11 @@ export default function ReconciliationPage() {
               })}</tbody>
             </table>))}
 
+          {tab === 'orphan' && data.ready && v.orphan.some(d => d.customer_id) && (
+            <div className="flex flex-wrap items-center gap-3 border-b bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900">
+              <span>Bu faturalar Paraşüt'te kesilmiş ama yazılımda siparişi yok. Geçmiş dönem için siparişleri faturalardan otomatik oluşturabilirsiniz; satış analizleri, temsilci performansı ve ürün bazlı raporlar da dolar.</span>
+              <Button size="sm" className="ml-auto" disabled={!!busy} onClick={() => buildOrders()}>{busy === 'build' ? 'Oluşturuluyor…' : `Faturalardan sipariş oluştur (${v.orphan.filter(d => d.customer_id).length})`}</Button>
+            </div>)}
           {tab === 'orphan' && (v.orphan.length === 0 ? <p className="p-4 text-sm text-slate-500">Paraşüt'teki tüm satış faturaları bir siparişe bağlı.</p> : (
             <table className="w-full text-sm">
               <thead><tr className="border-b bg-slate-50 text-left text-xs text-slate-500"><th className="px-3 py-2">Tarih</th><th>Fatura no</th><th>Müşteri</th><th className="text-right">Tutar (KDV dahil)</th><th className="pl-4">Siparişe bağla</th></tr></thead>

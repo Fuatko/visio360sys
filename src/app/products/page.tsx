@@ -6,6 +6,7 @@ import { formatMoney , cleanPayload } from '@/lib/utils';
 import { Package, Plus, Edit2, Trash2, RefreshCw, Search, Tag, Layers, BarChart3 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
+import { parasutCall } from '@/lib/parasut-client';
 
 interface Product {
   id: string;
@@ -270,6 +271,11 @@ export default function ProductsPage() {
             </select>
           </div>
           <div className="flex gap-2">
+            <Button variant="secondary" onClick={async () => {
+              if (!confirm("Paraşüt'teki ürün ve hizmetler kataloğa aktarılsın mı?\nVar olan ürünlerde yalnızca boş alanlar doldurulur (alış fiyatı, KDV, kod).")) return;
+              try { const r = await parasutCall('/api/parasut/build', 'POST', { action: 'products' }); alert(`Paraşüt'te ${r.found} ürün/hizmet bulundu: ${r.created} eklendi, ${r.updated} güncellendi.${r.errors?.length ? '\nHatalar: ' + r.errors.join(' | ') : ''}`); fetchProducts(); }
+              catch (e: any) { alert(e.message); }
+            }}>Paraşüt'ten al</Button>
             <Button variant="secondary" onClick={fetchProducts}>
               <RefreshCw className="h-4 w-4" />
             </Button>

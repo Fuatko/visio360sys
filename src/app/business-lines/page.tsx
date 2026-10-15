@@ -86,16 +86,28 @@ export default function BusinessLinesPage() {
     const jobsBuys = buys.filter(inYear).filter(d => !sup || supKey(d) === sup);
     const used = new Set<string>(linkedSales);
     const suggestions = new Map<string, any>();
+    // Satır açıklamalarındaki seri no / model kodları (ör. 5CD3041Q9F, PF4CXAR3): en güçlü eşleşme işareti
+    const linesOf = new Map<string, any[]>(); (data.lines || []).forEach((l: any) => linesOf.set(l.document_id, [...(linesOf.get(l.document_id) || []), l]));
+    const tokens = (id: string) => { const t = new Set<string>(); (linesOf.get(id) || []).forEach((l: any) => String(`${l.description || ''} ${l.product_name || ''}`).toUpperCase().split(/[^A-Z0-9ÇĞİÖŞÜ]+/).forEach(w => { if (w.length >= 6 && /\d/.test(w) && /[A-Z]/.test(w)) t.add(w); })); return t; };
+    const sameParty = (p: any, s: any) => (p.tax_number && p.tax_number === s.tax_number) || (p.contact_parasut_id && p.contact_parasut_id === s.contact_parasut_id) || normalizeName(p.contact_name || '') === normalizeName(s.contact_name || '');
     [...jobsBuys].filter(d => !byBuy.has(d.id)).sort((a, b) => String(a.issue_date).localeCompare(String(b.issue_date))).forEach(p => {
+      const pt = tokens(p.id);
+      if (pt.size) {
+        const hit = sales.filter(s => !used.has(s.id) && !sameParty(p, s) && Math.abs(days(p.issue_date, s.issue_date)) <= 180)
+          .map(s => ({ s, hits: Array.from(tokens(s.id)).filter(t => pt.has(t)) })).filter(x => x.hits.length)
+          .sort((a, b) => b.hits.length - a.hits.length || Math.abs(days(p.issue_date, a.s.issue_date)) - Math.abs(days(p.issue_date, b.s.issue_date)))[0];
+        if (hit) { used.add(hit.s.id); suggestions.set(p.id, { ...hit.s, _why: `Seri no / model eşleşti: ${hit.hits.slice(0, 2).join(', ')}` }); return; }
+      }
       const ln = lineOfBuy(p); if (!ln) return;
-      const c = sales.filter(s => !used.has(s.id) && lineOfSale(s) === ln && n(s.net_total_try) > n(p.net_total_try) && days(p.issue_date, s.issue_date) >= -15 && days(p.issue_date, s.issue_date) <= 60)
+      const c = sales.filter(s => !used.has(s.id) && !sameParty(p, s) && lineOfSale(s) === ln && n(s.net_total_try) > n(p.net_total_try) && n(s.net_total_try) <= n(p.net_total_try) * 4 && days(p.issue_date, s.issue_date) >= -15 && days(p.issue_date, s.issue_date) <= 60)
         .sort((a, b) => Math.abs(days(p.issue_date, a.issue_date)) - Math.abs(days(p.issue_date, b.issue_date)))[0];
-      if (c) { used.add(c.id); suggestions.set(p.id, c); }
+      if (c) { used.add(c.id); suggestions.set(p.id, { ...c, _why: 'Aynı iş kolu, yakın tarih ve uygun tutar' }); }
     });
-    const candidates = (p: any) => { const ln = lineOfBuy(p); return sales.filter(s => !linkedSales.has(s.id) && (!ln || lineOfSale(s) === ln) && Math.abs(days(p.issue_date, s.issue_date)) <= 120).slice(0, 40); };
+    const candidates = (p: any) => { const ln = lineOfBuy(p); return sales.filter(s => !linkedSales.has(s.id) && !sameParty(p, s) && (!ln || lineOfSale(s) === ln) && Math.abs(days(p.issue_date, s.issue_date)) <= 120).slice(0, 60); };
+    const lineText = (id: string) => (linesOf.get(id) || []).map((l: any) => l.description || l.product_name).filter(Boolean).join(' · ');
 
     const openBuys = buys.filter(d => d.payment_status !== 'paid' && Math.abs(n(d.remaining)) >= 0.5);
-    return { payable: openBuys.reduce((a, d) => a + Math.abs(n(d.remaining)), 0), payableN: openBuys.length, lines, general, buyCats, salesCats, principals, jobsBuys, byBuy, docById, suggestions, candidates, lineOfBuy, supKey, totalSales: lines.reduce((a, x) => a + x.sales, 0), totalBuys: lines.reduce((a, x) => a + x.buys, 0) };
+    return { lineText, payable: openBuys.reduce((a, d) => a + Math.abs(n(d.remaining)), 0), payableN: openBuys.length, lines, general, buyCats, salesCats, principals, jobsBuys, byBuy, docById, suggestions, candidates, lineOfBuy, supKey, totalSales: lines.reduce((a, x) => a + x.sales, 0), totalBuys: lines.reduce((a, x) => a + x.buys, 0) };
   }, [data, year, sup]);
 
   if (err && !data) return <div><Header title="İş Kolları & Bayi İşleri" /><div className="p-6"><Card className="border-red-200 bg-red-50 p-4 text-sm text-red-700">{err}</Card></div></div>;
@@ -191,14 +203,14 @@ export default function BusinessLinesPage() {
                 const sale = ss.reduce((a: number, s: any) => a + n(s.net_total_try), 0); const sg = v.suggestions.get(p.id);
                 return (
                   <tr key={p.id} className="border-b align-top">
-                    <td className="px-3 py-2"><span className="font-mono text-xs">{p.doc_no || '-'}</span> <span className="text-xs text-slate-400">{dt(p.issue_date)}</span><span className="block text-xs">{p.contact_name} · <span className="text-slate-500">{p.category || 'Kategorisiz'}{v.lineOfBuy(p) && v.lineOfBuy(p) !== p.category ? ` → ${v.lineOfBuy(p)}` : ''}</span></span></td>
+                    <td className="px-3 py-2"><span className="font-mono text-xs">{p.doc_no || '-'}</span> <span className="text-xs text-slate-400">{dt(p.issue_date)}</span>{v.lineText(p.id) && <span className="block max-w-md truncate text-[11px] text-slate-500" title={v.lineText(p.id)}>{v.lineText(p.id)}</span>}<span className="block text-xs">{p.contact_name} · <span className="text-slate-500">{p.category || 'Kategorisiz'}{v.lineOfBuy(p) && v.lineOfBuy(p) !== p.category ? ` → ${v.lineOfBuy(p)}` : ''}</span></span></td>
                     <td className="py-2 text-right text-amber-700">{tl(p.net_total_try)}</td>
                     <td className="py-2 pl-4 text-xs">
                       {ss.length ? ss.map((s: any, i: number) => (
                         <p key={s.id} className="flex items-center gap-1"><span className="font-mono">{s.doc_no}</span> · {s.contact_name} <span className="text-slate-400">{dt(s.issue_date)}</span>
                           {data.ready && <button title="Bağlantıyı kaldır" className="text-slate-300 hover:text-red-600" disabled={busy} onClick={() => post({ action: 'unlink', link_ids: [ls[i].id] }, 'Bağlantı kaldırıldı.')}><Unlink className="h-3.5 w-3.5" /></button>}</p>))
                       : sg ? (
-                        <p className="text-indigo-700"><Sparkles className="mr-1 inline h-3 w-3" />Öneri: <span className="font-mono">{sg.doc_no}</span> · {sg.contact_name} · {tl(sg.net_total_try)} <span className="text-slate-400">({days(p.issue_date, sg.issue_date) >= 0 ? '+' : ''}{days(p.issue_date, sg.issue_date)} gün)</span>
+                        <p className="text-indigo-700"><Sparkles className="mr-1 inline h-3 w-3" />Öneri: <span className="font-mono">{sg.doc_no}</span> · {sg.contact_name} · {tl(sg.net_total_try)} <span className="text-slate-400">({days(p.issue_date, sg.issue_date) >= 0 ? '+' : ''}{days(p.issue_date, sg.issue_date)} gün · {sg._why})</span>
                           {data.ready && <button className="ml-2 font-medium underline" disabled={busy} onClick={() => post({ action: 'link', pairs: [{ purchase_doc_id: p.id, sales_doc_id: sg.id }] }, 'Bağlandı.')}>Bağla</button>}</p>
                       ) : data.ready ? (
                         <select className="h-8 w-72 rounded border px-2" defaultValue="" disabled={busy} onChange={e => e.target.value && post({ action: 'link', pairs: [{ purchase_doc_id: p.id, sales_doc_id: e.target.value }] }, 'Bağlandı.')}>
