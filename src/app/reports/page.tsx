@@ -1,4 +1,5 @@
 'use client';
+import { withParasutCollections } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Input, Select } from '@/components/ui';
@@ -30,7 +31,7 @@ export default function ReportsPage() {
         supabase.from('sales_team').select('*').eq('status', 'active'),
       ]);
       setTargets(targetRes.data || []);
-      setCollections(collRes.data || []);
+      setCollections(await withParasutCollections(supabase, collRes.data || []));
       setOpportunities(oppRes.data || []);
       setCustomers(custRes.data || []);
       setSalesTeam(teamRes.data || []);

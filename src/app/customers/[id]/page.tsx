@@ -11,6 +11,7 @@ import { completeness, findDuplicates, NACE } from '@/lib/crm';
 import Timeline, { TLData } from '@/components/customer/Timeline';
 import CompanyInfo from '@/components/customer/CompanyInfo';
 import Contacts from '@/components/customer/Contacts';
+import { loadParasutSales, mergeParasut } from '@/lib/parasut-facts';
 import ParasutBalance from '@/components/customer/ParasutBalance';
 import RelationRoles from '@/components/customer/RelationRoles';
 import { Addresses, AccountTeam, InstalledBase } from '@/components/customer/Related';
@@ -69,7 +70,8 @@ export default function CustomerCardPage() {
       safe(supabase.from('contracts').select('*').eq('customer_id', id)),
       safe(supabase.from('account_briefs').select('id, created_at, customer_id').eq('customer_id', id)),
     ]);
-    setTld({ activities, visits, opps, quotes, orders, invoices, collections, complaints, surveys, contracts, briefs });
+    const px = mergeParasut(orders, collections, await loadParasutSales(supabase, id));
+    setTld({ activities, visits, opps, quotes, orders: px.orders, invoices, collections: px.collections, complaints, surveys, contracts, briefs });
   }, [id]);
   useEffect(() => { load(); }, [load]);
 

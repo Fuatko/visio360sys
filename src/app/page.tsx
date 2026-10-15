@@ -1,4 +1,5 @@
 'use client';
+import { withParasutCollections, withParasutOrders } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
 import UserDashboard from '@/components/UserDashboard';
@@ -119,14 +120,16 @@ export default function Dashboard() {
         .select('*');
 
       // Siparişler (gerçekleşen satış)
-      const { data: orders } = await supabase
+      const { data: ordersRaw } = await supabase
         .from('orders')
         .select('*');
+      const orders = (await withParasutOrders(supabase, ordersRaw as any[]))
 
       // Tahsilatlar
-      const { data: collections } = await supabase
+      const { data: collectionsRaw } = await supabase
         .from('collections')
         .select('*');
+      const collections = (await withParasutCollections(supabase, collectionsRaw as any[]))
 
       // Görevler
       const { count: taskCount } = await supabase

@@ -1,4 +1,5 @@
 'use client';
+import { withParasutCollections, withParasutOrders } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge } from '@/components/ui';
@@ -63,7 +64,7 @@ export default function CollectionsAnalyticsPage() {
       setReps(repData || []);
 
       // Fetch collections
-      const { data: collections } = await supabase
+      const { data: collectionsRaw } = await supabase
         .from('collections')
         .select(`
           *,
@@ -71,6 +72,7 @@ export default function CollectionsAnalyticsPage() {
           sales_rep:sales_person_id(id, name, department)
         `)
         .order('due_date', { ascending: false });
+      const collections = (await withParasutCollections(supabase, collectionsRaw as any[]))
 
       const collData = collections || [];
       const today = new Date();
@@ -218,7 +220,7 @@ export default function CollectionsAnalyticsPage() {
     setDrilldownLoading(true);
 
     try {
-      const { data: invoices } = await supabase
+      const { data: invoicesRaw } = await supabase
         .from('collections')
         .select(`
           *,
@@ -226,6 +228,7 @@ export default function CollectionsAnalyticsPage() {
         `)
         .eq('customer_id', row.id)
         .order('due_date', { ascending: false });
+      const invoices = (await withParasutCollections(supabase, invoicesRaw as any[])).filter((x: any) => x.customer_id === row.id)
 
       setDrilldownData((invoices || []).map(inv => ({
         invoice_no: inv.invoice_number || inv.id.slice(0, 8),

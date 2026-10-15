@@ -1,5 +1,6 @@
 'use client';
 
+import { loadParasutSales, mergeParasut } from '@/lib/parasut-facts';
 import Header from '@/components/Header';
 import { Card } from '@/components/ui';
 import { createClient } from '@/lib/supabase';
@@ -39,7 +40,8 @@ export default function CustomerSuccessPage() {
     ]);
     setReady(!s.error && !cp.error);
     setCustomers(c.data || []); setTeam(t.data || []); setContracts(ct.data || []); setOpps(op.data || []);
-    setData({ orders: o.data || [], collections: col.data || [], activities: a.data || [], surveys: s.data || [], complaints: cp.data || [] });
+    const px = mergeParasut(o.data || [], col.data || [], await loadParasutSales(supabase));
+    setData({ orders: px.orders, collections: px.collections, activities: a.data || [], surveys: s.data || [], complaints: cp.data || [] });
     setLoading(false);
   }, []);
   useEffect(() => {

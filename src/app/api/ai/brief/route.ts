@@ -55,14 +55,15 @@ export async function POST(request: Request) {
   // CRM'deki geçmiş (varsa)
   let crm: Json = {};
   if (input.customer_id) {
-    const [c, acts, opps, ords] = await Promise.all([
+    const [c, acts, opps, ords, pinv] = await Promise.all([
       db.from('customers').select('*').eq('id', input.customer_id).maybeSingle(),
       db.from('crm_activities').select('type, title, description, activity_date').eq('customer_id', input.customer_id).order('activity_date', { ascending: false }).limit(15),
       db.from('opportunities').select('title, stage, value, expected_close, notes').eq('customer_id', input.customer_id).limit(10),
       db.from('orders').select('order_date, total, status').eq('customer_id', input.customer_id).order('order_date', { ascending: false }).limit(10),
+      db.from('parasut_documents').select('issue_date, doc_no, net_total_try, payment_status, remaining, category').eq('kind', 'sales_invoice').eq('customer_id', input.customer_id).order('issue_date', { ascending: false }).limit(24),
     ]);
     const cust = c.data ? Object.fromEntries(Object.entries(c.data).filter(([k]) => !['id', 'organization_id', 'assigned_to', 'price_list_id'].includes(k))) : null;
-    crm = { customer: cust, activities: acts.data, opportunities: opps.data, recent_orders: ords.data };
+    crm = { customer: cust, activities: acts.data, opportunities: opps.data, recent_orders: ords.data, kesilen_faturalar_parasut: pinv.error ? undefined : (pinv.data || []).map((d: any) => ({ tarih: d.issue_date, no: d.doc_no, tutar_kdv_haric: d.net_total_try, kategori: d.category, odeme: d.payment_status, kalan: d.remaining })) };
   } else if (input.lead_id) {
     const { data: l } = await db.from('leads').select('company_name, contact_name, contact_title, source, status, score, estimated_value, notes, last_contact').eq('id', input.lead_id).maybeSingle();
     crm = { lead: l };

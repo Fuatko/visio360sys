@@ -1,4 +1,5 @@
 'use client';
+import { loadParasutSales, mergeParasut } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
 import { Card, Badge, Button } from '@/components/ui';
@@ -110,9 +111,10 @@ export default function Customer360Page() {
         supabase.from('orders').select('*').eq('customer_id', customer.id)
       ]);
 
-      const collections = collectionsRes.data || [];
+      const px = mergeParasut(ordersRes.data || [], collectionsRes.data || [], await loadParasutSales(supabase, customer.id));
+      const collections = px.collections;
       const opportunities = opportunitiesRes.data || [];
-      const orders = ordersRes.data || [];
+      const orders = px.orders;
 
       // Calculate metrics
       const totalSales = orders.reduce((sum, o) => sum + (o.total_amount || 0), 0);

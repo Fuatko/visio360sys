@@ -1,4 +1,5 @@
 'use client';
+import { withParasutCollections } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
 import { Card } from '@/components/ui';
@@ -146,7 +147,7 @@ export default function ExecutiveDashboard() {
       ]);
 
       const targets = targetsRes.data || [];
-      const collections = collectionsRes.data || [];
+      const collections = await withParasutCollections(supabase, collectionsRes.data || []);
       const opportunities = opportunitiesRes.data || [];
       const team = teamRes.data || [];
       const customers = customersRes.data || [];

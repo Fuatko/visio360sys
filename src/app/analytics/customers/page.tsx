@@ -1,4 +1,5 @@
 'use client';
+import { withParasutCollections, withParasutOrders } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, ProgressBar } from '@/components/ui';
@@ -66,9 +67,10 @@ export default function CustomerAnalyticsPage() {
         .order('name');
 
       // Fetch collections for customer analytics
-      const { data: collections } = await supabase
+      const { data: collectionsRaw } = await supabase
         .from('collections')
         .select('*');
+      const collections = (await withParasutCollections(supabase, collectionsRaw as any[]))
 
       // Fetch opportunities
       const { data: opportunities } = await supabase
@@ -246,11 +248,12 @@ export default function CustomerAnalyticsPage() {
       setCustomerDetail(customer);
 
       // Fetch invoices
-      const { data: invoices } = await supabase
+      const { data: invoicesRaw } = await supabase
         .from('collections')
         .select('*')
         .eq('customer_id', row.id)
         .order('due_date', { ascending: false });
+      const invoices = (await withParasutCollections(supabase, invoicesRaw as any[])).filter((x: any) => x.customer_id === row.id)
 
       // Fetch recent activities
       const { data: activities } = await supabase
