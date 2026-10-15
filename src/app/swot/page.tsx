@@ -81,7 +81,7 @@ const COLORS = {
   threat: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: 'text-amber-600' },
 };
 
-const CHART_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
+const CHART_COLORS = ['#10b981', '#3f5f88', '#5f6488', '#b5832f', '#b0514a', '#3f7c8a', '#8e5a77', '#7a8b3a'];
 
 const METRIC_THRESHOLDS = {
   sales_ratio: { excellent: 1.1, good: 1.0, average: 0.9, poor: 0.7 },
@@ -647,9 +647,9 @@ export default function SWOTAnalysisPage() {
     if (!swotAnalysis) return [];
     return [
       { name: 'Güçlü', value: swotAnalysis.strengths.length, color: '#10b981' },
-      { name: 'Zayıf', value: swotAnalysis.weaknesses.length, color: '#ef4444' },
-      { name: 'Fırsat', value: swotAnalysis.opportunities.length, color: '#3b82f6' },
-      { name: 'Tehdit', value: swotAnalysis.threats.length, color: '#f59e0b' },
+      { name: 'Zayıf', value: swotAnalysis.weaknesses.length, color: '#b0514a' },
+      { name: 'Fırsat', value: swotAnalysis.opportunities.length, color: '#3f5f88' },
+      { name: 'Tehdit', value: swotAnalysis.threats.length, color: '#b5832f' },
     ];
   }, [swotAnalysis]);
 
@@ -863,7 +863,7 @@ export default function SWOTAnalysisPage() {
                       <PolarGrid stroke="#e2e8f0" />
                       <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12 }} />
                       <PolarRadiusAxis angle={30} domain={[0, 120]} tick={{ fontSize: 10 }} />
-                      <Radar name="Kişi" dataKey="kisi" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.5} />
+                      <Radar name="Kişi" dataKey="kisi" stroke="#5f6488" fill="#5f6488" fillOpacity={0.5} />
                       <Radar name="Takım Ort." dataKey="takim" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.2} strokeDasharray="5 5" />
                       <Legend />
                       <Tooltip />
@@ -889,8 +889,8 @@ export default function SWOTAnalysisPage() {
                           <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                         </linearGradient>
                         <linearGradient id="colorCollection" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#3f5f88" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#3f5f88" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -899,8 +899,8 @@ export default function SWOTAnalysisPage() {
                       <Tooltip formatter={(value: number) => `%${value}`} />
                       <Legend />
                       <Area type="monotone" dataKey="sales" name="Satış %" stroke="#10b981" fillOpacity={1} fill="url(#colorSales)" strokeWidth={2} />
-                      <Area type="monotone" dataKey="collection" name="Tahsilat %" stroke="#3b82f6" fillOpacity={1} fill="url(#colorCollection)" strokeWidth={2} />
-                      <Line type="monotone" dataKey="score" name="Skor" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: '#8b5cf6' }} />
+                      <Area type="monotone" dataKey="collection" name="Tahsilat %" stroke="#3f5f88" fillOpacity={1} fill="url(#colorCollection)" strokeWidth={2} />
+                      <Line type="monotone" dataKey="score" name="Skor" stroke="#5f6488" strokeWidth={2} dot={{ fill: '#5f6488' }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </CardBody>

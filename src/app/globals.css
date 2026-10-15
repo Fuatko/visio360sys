@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 /* Tailwind v4: renk verilmeyen kenarlıklar siyah yerine açık gri olsun (v3 davranışı) */
@@ -15,19 +16,92 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* =====================================================================
+   KURUMSAL TEMA — lacivert #1B3A5C / yeşil #10B981 / pastel zeminler / Inter
+   Tailwind renk ölçekleri mat, kurumsal tonlara eşlenir: tüm menü, tablo,
+   rapor ve panolar tek yerden aynı paleti kullanır.
+   ===================================================================== */
+@theme {
+  --font-sans: "Inter", "Calibri", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+  /* Mavi / indigo → lacivert (ana renk) */
+  --color-blue-50: #f2f5f9;  --color-blue-100: #e3e9f1; --color-blue-200: #c7d3e3; --color-blue-300: #9db0ca;
+  --color-blue-400: #6b84a8; --color-blue-500: #3f5f88; --color-blue-600: #1b3a5c; --color-blue-700: #152e4a;
+  --color-blue-800: #10233a; --color-blue-900: #0b1829; --color-blue-950: #070f1a;
+  --color-indigo-50: #f2f5f9;  --color-indigo-100: #e3e9f1; --color-indigo-200: #c7d3e3; --color-indigo-300: #9db0ca;
+  --color-indigo-400: #6b84a8; --color-indigo-500: #3f5f88; --color-indigo-600: #1b3a5c; --color-indigo-700: #152e4a;
+  --color-indigo-800: #10233a; --color-indigo-900: #0b1829; --color-indigo-950: #070f1a;
+  --color-sky-50: #f1f6f9;  --color-sky-100: #dfeaf1; --color-sky-200: #bfd4e3; --color-sky-300: #93b5cd;
+  --color-sky-400: #6893b3; --color-sky-500: #4a7699; --color-sky-600: #3a5f7d; --color-sky-700: #2f4d66;
+  --color-sky-800: #263e52; --color-sky-900: #1e3141; --color-sky-950: #121f29;
+
+  /* Mor / violet → arduvaz mavisi */
+  --color-purple-50: #f4f5f8;  --color-purple-100: #e7e8f0; --color-purple-200: #cfd1e0; --color-purple-300: #acafc8;
+  --color-purple-400: #8488a8; --color-purple-500: #5f6488; --color-purple-600: #474c6e; --color-purple-700: #383c57;
+  --color-purple-800: #2b2e43; --color-purple-900: #1e202f; --color-purple-950: #13141e;
+  --color-violet-50: #f4f5f8;  --color-violet-100: #e7e8f0; --color-violet-200: #cfd1e0; --color-violet-300: #acafc8;
+  --color-violet-400: #8488a8; --color-violet-500: #5f6488; --color-violet-600: #474c6e; --color-violet-700: #383c57;
+  --color-violet-800: #2b2e43; --color-violet-900: #1e202f; --color-violet-950: #13141e;
+  --color-fuchsia-50: #f8f3f6;  --color-fuchsia-100: #eee1e8; --color-fuchsia-200: #dcc2d1; --color-fuchsia-300: #c39bb2;
+  --color-fuchsia-400: #a87591; --color-fuchsia-500: #8e5a77; --color-fuchsia-600: #764862; --color-fuchsia-700: #5f3a4f;
+  --color-fuchsia-800: #4a2d3e; --color-fuchsia-900: #3a2330; --color-fuchsia-950: #24161e;
+  --color-pink-50: #f8f3f6;  --color-pink-100: #eee1e8; --color-pink-200: #dcc2d1; --color-pink-300: #c39bb2;
+  --color-pink-400: #a87591; --color-pink-500: #8e5a77; --color-pink-600: #764862; --color-pink-700: #5f3a4f;
+  --color-pink-800: #4a2d3e; --color-pink-900: #3a2330; --color-pink-950: #24161e;
+  --color-rose-50: #f9f3f3;  --color-rose-100: #f0e1e1; --color-rose-200: #e0c3c3; --color-rose-300: #c99c9c;
+  --color-rose-400: #b07676; --color-rose-500: #985a5a; --color-rose-600: #7f4848; --color-rose-700: #673a3a;
+  --color-rose-800: #512e2e; --color-rose-900: #402424; --color-rose-950: #281616;
+
+  /* Yeşil / zümrüt → kurumsal yeşil #10B981 */
+  --color-green-50: #eef8f4;  --color-green-100: #d5efe5; --color-green-200: #abdecb; --color-green-300: #78c8aa;
+  --color-green-400: #3fb58a; --color-green-500: #10b981; --color-green-600: #0e8f66; --color-green-700: #0b7353;
+  --color-green-800: #0a5a42; --color-green-900: #084836; --color-green-950: #042a1f;
+  --color-emerald-50: #eef8f4;  --color-emerald-100: #d5efe5; --color-emerald-200: #abdecb; --color-emerald-300: #78c8aa;
+  --color-emerald-400: #3fb58a; --color-emerald-500: #10b981; --color-emerald-600: #0e8f66; --color-emerald-700: #0b7353;
+  --color-emerald-800: #0a5a42; --color-emerald-900: #084836; --color-emerald-950: #042a1f;
+  --color-teal-50: #eff6f5;  --color-teal-100: #d8eae7; --color-teal-200: #b1d4cf; --color-teal-300: #82b8b0;
+  --color-teal-400: #57998f; --color-teal-500: #3d7e74; --color-teal-600: #31665e; --color-teal-700: #29524c;
+  --color-teal-800: #21413c; --color-teal-900: #1a3330; --color-teal-950: #10201e;
+  --color-lime-50: #f5f7ee;  --color-lime-100: #e7ecd5; --color-lime-200: #d0d9ab; --color-lime-300: #b2c07a;
+  --color-lime-400: #95a651; --color-lime-500: #7a8b3a; --color-lime-600: #62702f; --color-lime-700: #4e5926;
+  --color-lime-800: #3e461f; --color-lime-900: #313819; --color-lime-950: #1f230f;
+  --color-cyan-50: #f0f6f7;  --color-cyan-100: #daeaed; --color-cyan-200: #b5d4da; --color-cyan-300: #87b6c0;
+  --color-cyan-400: #5b97a4; --color-cyan-500: #3f7c8a; --color-cyan-600: #326472; --color-cyan-700: #294f5a;
+  --color-cyan-800: #203e47; --color-cyan-900: #183038; --color-cyan-950: #0f1e23;
+
+  /* Kırmızı / turuncu / sarı → mat kiremit ve hardal */
+  --color-red-50: #fbf3f2;  --color-red-100: #f5e1df; --color-red-200: #ebc3bf; --color-red-300: #db9a94;
+  --color-red-400: #c7716a; --color-red-500: #b0514a; --color-red-600: #973f39; --color-red-700: #7d332e;
+  --color-red-800: #642a26; --color-red-900: #4f211f; --color-red-950: #311412;
+  --color-orange-50: #fbf5ef;  --color-orange-100: #f4e5d6; --color-orange-200: #e8cbad; --color-orange-300: #d8aa7d;
+  --color-orange-400: #c78a55; --color-orange-500: #b2703b; --color-orange-600: #955a2f; --color-orange-700: #794828;
+  --color-orange-800: #5f3921; --color-orange-900: #4b2d1b; --color-orange-950: #2e1c11;
+  --color-amber-50: #fbf7ee;  --color-amber-100: #f4e9cf; --color-amber-200: #e9d3a0; --color-amber-300: #dab66d;
+  --color-amber-400: #c99b47; --color-amber-500: #b5832f; --color-amber-600: #966b26; --color-amber-700: #78551f;
+  --color-amber-800: #5e4319; --color-amber-900: #4a3514; --color-amber-950: #2d200c;
+  --color-yellow-50: #fbf8ee;  --color-yellow-100: #f4ecce; --color-yellow-200: #e9d99e; --color-yellow-300: #dac06a;
+  --color-yellow-400: #c9a645; --color-yellow-500: #b38d2e; --color-yellow-600: #937325; --color-yellow-700: #755c1e;
+  --color-yellow-800: #5c4818; --color-yellow-900: #483913; --color-yellow-950: #2c230b;
+
+  /* Yazı ölçüleri: büyük başlık ve rakamlar bir kademe küçük, daha dengeli */
+  --text-2xl: 1.3rem;   --text-2xl--line-height: 1.75rem;
+  --text-3xl: 1.55rem;  --text-3xl--line-height: 2rem;
+  --text-4xl: 1.85rem;  --text-4xl--line-height: 2.25rem;
+  --text-5xl: 2.2rem;   --text-5xl--line-height: 1.1;
+  --text-6xl: 2.6rem;   --text-6xl--line-height: 1.1;
 }
 
+html { font-size: 15px; }   /* tüm ekranlarda yazı ve rakamlar bir kademe küçük */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #f6f8fb;
+  color: #1f2937;
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "cv11" 1;   /* rakamlar hizalı (tablolarda düzgün sütun) */
 }
+/* Kartlar ve tablolar: daha yumuşak gölge, ince çizgi */
+.shadow-sm { box-shadow: 0 1px 2px rgba(16, 35, 58, 0.04) !important; }
+.shadow, .shadow-md { box-shadow: 0 1px 3px rgba(16, 35, 58, 0.06), 0 1px 2px rgba(16, 35, 58, 0.04) !important; }
+.shadow-lg, .shadow-xl { box-shadow: 0 4px 12px rgba(16, 35, 58, 0.08) !important; }
+thead th { letter-spacing: 0.01em; }

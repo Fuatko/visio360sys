@@ -47,7 +47,7 @@ interface DashboardStats {
 }
 
 // ============ CONSTANTS ============
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+const COLORS = ['#1b3a5c', '#10b981', '#b5832f', '#b0514a', '#5f6488', '#3f7c8a', '#8e5a77', '#7a8b3a'];
 const MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
 
 // ============ MAIN COMPONENT ============
@@ -436,8 +436,8 @@ export default function Dashboard() {
                 <AreaChart data={monthlyData}>
                   <defs>
                     <linearGradient id="colorSatis" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#1b3a5c" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#1b3a5c" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="colorTahsilat" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -456,7 +456,7 @@ export default function Dashboard() {
                     type="monotone" 
                     dataKey="satış" 
                     name="Satış"
-                    stroke="#6366f1" 
+                    stroke="#1b3a5c" 
                     fillOpacity={1} 
                     fill="url(#colorSatis)" 
                     strokeWidth={2}
@@ -504,7 +504,7 @@ export default function Dashboard() {
                   />
                   <Legend />
                   <Bar dataKey="hedef" name="Hedef" fill="#e2e8f0" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="gerçekleşen" name="Gerçekleşen" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="gerçekleşen" name="Gerçekleşen" fill="#1b3a5c" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardBody>

@@ -36,8 +36,8 @@ export default function PortalTraining() {
 
   const certificate = (t: any, c: any) => {
     printHtml(`Sertifika ${t.title}`, `
-      <div style="border:6px double #4338ca;padding:48px;text-align:center;margin-top:40px">
-        <p style="letter-spacing:4px;color:#6366f1">${escapeHtml(me.organization || '')}</p>
+      <div style="border:6px double #1b3a5c;padding:48px;text-align:center;margin-top:40px">
+        <p style="letter-spacing:4px;color:#1b3a5c">${escapeHtml(me.organization || '')}</p>
         <h1 style="font-size:32px;margin:16px 0">Yetkinlik Sertifikası</h1>
         <p>Bu belge</p>
         <h2 style="font-size:26px;margin:8px 0">${escapeHtml(me.user.full_name || me.user.email)}</h2>

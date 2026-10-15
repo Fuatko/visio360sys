@@ -425,7 +425,7 @@ export default function Customer360Page() {
                         <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₺${(v / 1000).toFixed(0)}K`} />
                         <Tooltip formatter={(value: number) => `₺${formatMoney(value)}`} />
-                        <Area type="monotone" dataKey="sales" name="Satış" stroke="#3b82f6" fill="#3b82f633" />
+                        <Area type="monotone" dataKey="sales" name="Satış" stroke="#3f5f88" fill="#3f5f8833" />
                         <Area type="monotone" dataKey="collection" name="Tahsilat" stroke="#10b981" fill="#10b98133" />
                       </AreaChart>
                     </ResponsiveContainer>

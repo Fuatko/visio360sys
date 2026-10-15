@@ -69,8 +69,8 @@ export default function Audits({ supabase, audits, actions, templates, branches,
     const photos = (a.answers || []).flatMap((x: any) => x.photos || []);
     const urls = photos.length ? await signedPortalUrls(supabase, photos) : {};
     const acts = actions.filter(x => x.audit_id === a.id);
-    const rows = (a.answers || []).map((x: any) => `<tr><td>${escapeHtml(x.section || '')}</td><td>${escapeHtml(x.text)}${x.critical ? ' <b style="color:#b91c1c">[KRİTİK]</b>' : ''}</td>
-      <td style="color:${x.result === 'ok' ? '#15803d' : x.result === 'fail' ? '#b91c1c' : '#64748b'}"><b>${x.result === 'ok' ? 'Uygun' : x.result === 'fail' ? 'Uygunsuz' : 'Yok'}</b></td>
+    const rows = (a.answers || []).map((x: any) => `<tr><td>${escapeHtml(x.section || '')}</td><td>${escapeHtml(x.text)}${x.critical ? ' <b style="color:#7d332e">[KRİTİK]</b>' : ''}</td>
+      <td style="color:${x.result === 'ok' ? '#0b7353' : x.result === 'fail' ? '#7d332e' : '#64748b'}"><b>${x.result === 'ok' ? 'Uygun' : x.result === 'fail' ? 'Uygunsuz' : 'Yok'}</b></td>
       <td>${escapeHtml(x.note || '')}${(x.photos || []).map((p: string) => urls[p] ? `<br/><img src="${urls[p]}" style="height:90px;margin-top:4px;border-radius:4px"/>` : '').join('')}</td></tr>`).join('');
     printHtml(`Denetim ${bname(a.branch_id)}`, `<h1>Şube Denetim Raporu</h1>
       <p><b>${escapeHtml(bname(a.branch_id))}</b> · ${escapeHtml(a.template_name || '')}<br/>Tarih: ${escapeHtml(new Date(a.audited_at).toLocaleString('tr-TR'))} · Denetçi: ${escapeHtml(a.auditor_name || '-')}

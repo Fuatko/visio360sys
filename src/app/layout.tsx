@@ -14,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="tr">
-      <body className="bg-slate-50 font-sans antialiased">
+      <body className="bg-[#f6f8fb] font-sans antialiased">
         <ProtectedLayout>{children}</ProtectedLayout>
       </body>
     </html>

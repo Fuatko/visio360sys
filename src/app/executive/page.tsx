@@ -47,10 +47,10 @@ interface RiskAlert {
 // ============ CONSTANTS ============
 const HEALTH_COLORS = {
   excellent: '#10b981',
-  good: '#22c55e',
-  warning: '#f59e0b',
-  danger: '#ef4444',
-  critical: '#dc2626'
+  good: '#10b981',
+  warning: '#b5832f',
+  danger: '#b0514a',
+  critical: '#973f39'
 };
 
 const MONTHS = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
@@ -326,10 +326,10 @@ export default function ExecutiveDashboard() {
 
   const agingChartData = [
     { name: 'Vadesi Gelmemiş', value: aging.current, color: '#10b981' },
-    { name: '0-30 Gün', value: aging.days30, color: '#f59e0b' },
-    { name: '31-60 Gün', value: aging.days60, color: '#f97316' },
-    { name: '61-90 Gün', value: aging.days90, color: '#ef4444' },
-    { name: '90+ Gün', value: aging.days120Plus, color: '#dc2626' }
+    { name: '0-30 Gün', value: aging.days30, color: '#b5832f' },
+    { name: '31-60 Gün', value: aging.days60, color: '#b2703b' },
+    { name: '61-90 Gün', value: aging.days90, color: '#b0514a' },
+    { name: '90+ Gün', value: aging.days120Plus, color: '#973f39' }
   ].filter(d => d.value > 0);
 
   return (
@@ -447,7 +447,7 @@ export default function ExecutiveDashboard() {
                   <Tooltip formatter={(value: number) => `₺${formatMoney(value)}`} />
                   <Legend />
                   <Bar dataKey="target" name="Hedef" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="sales" name="Satış" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="sales" name="Satış" fill="#3f5f88" radius={[4, 4, 0, 0]} />
                   <Line type="monotone" dataKey="collection" name="Tahsilat" stroke="#10b981" strokeWidth={3} dot={{ r: 5 }} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -521,8 +521,8 @@ export default function ExecutiveDashboard() {
                 <Tooltip formatter={(value: number) => `₺${formatMoney(value)}`} />
                 <Legend />
                 <Area type="monotone" dataKey="optimistic" name="İyimser" stroke="#10b981" fill="#10b98133" />
-                <Area type="monotone" dataKey="expected" name="Beklenen" stroke="#3b82f6" fill="#3b82f633" />
-                <Area type="monotone" dataKey="pessimistic" name="Kötümser" stroke="#ef4444" fill="#ef444433" />
+                <Area type="monotone" dataKey="expected" name="Beklenen" stroke="#3f5f88" fill="#3f5f8833" />
+                <Area type="monotone" dataKey="pessimistic" name="Kötümser" stroke="#b0514a" fill="#b0514a33" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

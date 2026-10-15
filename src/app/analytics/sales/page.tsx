@@ -20,14 +20,14 @@ import {
   LineChart, Line, FunnelChart, Funnel, LabelList, Cell, PieChart as RechartsPie, Pie
 } from 'recharts';
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+const COLORS = ['#1b3a5c', '#10b981', '#b5832f', '#b0514a', '#5f6488', '#3f7c8a'];
 const STAGE_COLORS: Record<string, string> = {
-  'Yeni': '#6366f1',
-  'Görüşme': '#8b5cf6',
-  'Teklif': '#f59e0b',
-  'Müzakere': '#f97316',
+  'Yeni': '#1b3a5c',
+  'Görüşme': '#5f6488',
+  'Teklif': '#b5832f',
+  'Müzakere': '#b2703b',
   'Kazanıldı': '#10b981',
-  'Kaybedildi': '#ef4444',
+  'Kaybedildi': '#b0514a',
 };
 
 export default function SalesAnalyticsPage() {
@@ -366,7 +366,7 @@ export default function SalesAnalyticsPage() {
                   ]} />
                   <Legend />
                   <Line type="monotone" dataKey="satış" name="Satış" stroke="#10b981" strokeWidth={2} dot />
-                  <Line type="monotone" dataKey="pipeline" name="Pipeline" stroke="#f59e0b" strokeWidth={2} dot />
+                  <Line type="monotone" dataKey="pipeline" name="Pipeline" stroke="#b5832f" strokeWidth={2} dot />
                 </LineChart>
               </ResponsiveContainer>
             </CardBody>

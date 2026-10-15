@@ -21,7 +21,7 @@ import {
   AreaChart, Area, PieChart as RechartsPie, Pie, Cell
 } from 'recharts';
 
-const COLORS = ['#10b981', '#f59e0b', '#f97316', '#ef4444'];
+const COLORS = ['#10b981', '#b5832f', '#b2703b', '#b0514a'];
 
 export default function CollectionsAnalyticsPage() {
   const [loading, setLoading] = useState(true);
@@ -307,7 +307,7 @@ export default function CollectionsAnalyticsPage() {
                   <Tooltip formatter={(value: number) => [`₺${formatMoney(value)}`, '']} />
                   <Legend />
                   <Area type="monotone" dataKey="tahsil" name="Tahsilat" stroke="#10b981" fill="url(#colorTahsil)" />
-                  <Area type="monotone" dataKey="vadesi_gecmis" name="Vadesi Geçmiş" stroke="#ef4444" fill="#fee2e2" />
+                  <Area type="monotone" dataKey="vadesi_gecmis" name="Vadesi Geçmiş" stroke="#b0514a" fill="#fee2e2" />
                 </AreaChart>
               </ResponsiveContainer>
             </CardBody>

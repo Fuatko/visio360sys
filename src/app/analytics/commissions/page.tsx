@@ -20,7 +20,7 @@ import {
   PieChart as RechartsPie, Pie, Cell, LineChart, Line
 } from 'recharts';
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+const COLORS = ['#1b3a5c', '#10b981', '#b5832f', '#b0514a', '#5f6488', '#3f7c8a'];
 
 export default function CommissionAnalyticsPage() {
   const [loading, setLoading] = useState(true);
@@ -344,7 +344,7 @@ export default function CommissionAnalyticsPage() {
                   <Tooltip formatter={(value: number) => [`₺${formatMoney(value)}`, '']} />
                   <Legend />
                   <Bar dataKey="baz" name="Baz Prim" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="kazanilan" name="Kazanılan" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="kazanilan" name="Kazanılan" fill="#1b3a5c" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardBody>

@@ -22,11 +22,11 @@ import {
   PieChart as RechartsPie, Pie, Cell, Treemap
 } from 'recharts';
 
-const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+const COLORS = ['#1b3a5c', '#10b981', '#b5832f', '#b0514a', '#5f6488', '#3f7c8a', '#8e5a77', '#7a8b3a'];
 const RISK_COLORS: Record<string, string> = {
   'Düşük': '#10b981',
-  'Orta': '#f59e0b',
-  'Yüksek': '#ef4444',
+  'Orta': '#b5832f',
+  'Yüksek': '#b0514a',
 };
 
 export default function CustomerAnalyticsPage() {
@@ -215,8 +215,8 @@ export default function CustomerAnalyticsPage() {
       // Risk distribution
       const riskDist = [
         { name: 'Düşük Risk', value: customerMetrics.filter(c => c.risk_status === 'Düşük').length, color: '#10b981' },
-        { name: 'Orta Risk', value: customerMetrics.filter(c => c.risk_status === 'Orta').length, color: '#f59e0b' },
-        { name: 'Yüksek Risk', value: customerMetrics.filter(c => c.risk_status === 'Yüksek').length, color: '#ef4444' },
+        { name: 'Orta Risk', value: customerMetrics.filter(c => c.risk_status === 'Orta').length, color: '#b5832f' },
+        { name: 'Yüksek Risk', value: customerMetrics.filter(c => c.risk_status === 'Yüksek').length, color: '#b0514a' },
       ];
       setRiskData(riskDist);
 
@@ -342,7 +342,7 @@ export default function CustomerAnalyticsPage() {
                     name === 'sales' ? 'Satış' : 'Müşteri Sayısı'
                   ]} />
                   <Legend />
-                  <Bar dataKey="value" name="Müşteri" fill="#6366f1" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="value" name="Müşteri" fill="#1b3a5c" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardBody>

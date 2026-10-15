@@ -426,7 +426,7 @@ export default function SimulationPage() {
                 <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₺${(v / 1000).toFixed(0)}K`} />
                 <Tooltip formatter={(value: number) => `₺${formatMoney(value)}`} />
                 <Bar dataKey="base" name="Mevcut" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="simulated" name="Simüle" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="simulated" name="Simüle" fill="#1b3a5c" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

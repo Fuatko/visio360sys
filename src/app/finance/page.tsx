@@ -146,10 +146,10 @@ export default function FinanceDashboard() {
 
       setAgingData([
         { label: 'Vadesi Gelmemiş', range: 'Güncel', amount: buckets.current.amount, count: buckets.current.count, color: '#10b981', riskLevel: 'low' },
-        { label: '1-30 Gün', range: 'Gecikmiş', amount: buckets.days30.amount, count: buckets.days30.count, color: '#f59e0b', riskLevel: 'medium' },
-        { label: '31-60 Gün', range: 'Gecikmiş', amount: buckets.days60.amount, count: buckets.days60.count, color: '#f97316', riskLevel: 'medium' },
-        { label: '61-90 Gün', range: 'Riskli', amount: buckets.days90.amount, count: buckets.days90.count, color: '#ef4444', riskLevel: 'high' },
-        { label: '90+ Gün', range: 'Kritik', amount: buckets.days120.amount, count: buckets.days120.count, color: '#dc2626', riskLevel: 'critical' }
+        { label: '1-30 Gün', range: 'Gecikmiş', amount: buckets.days30.amount, count: buckets.days30.count, color: '#b5832f', riskLevel: 'medium' },
+        { label: '31-60 Gün', range: 'Gecikmiş', amount: buckets.days60.amount, count: buckets.days60.count, color: '#b2703b', riskLevel: 'medium' },
+        { label: '61-90 Gün', range: 'Riskli', amount: buckets.days90.amount, count: buckets.days90.count, color: '#b0514a', riskLevel: 'high' },
+        { label: '90+ Gün', range: 'Kritik', amount: buckets.days120.amount, count: buckets.days120.count, color: '#973f39', riskLevel: 'critical' }
       ]);
 
       setCollections(collectionItems.sort((a, b) => b.days_overdue - a.days_overdue));
