@@ -148,7 +148,12 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
           const tax = String(contact?.attributes?.tax_number || '').replace(/\D/g, '');
           const cur = a.currency === 'TRL' || !a.currency ? 'TRY' : a.currency;
           const rate = num(a.exchange_rate) || 1;
-          const net = num(a.net_total ?? a.net_amount ?? a.total ?? a.amount);
+          // Paraşüt: net_total = KDV DAHİL genel toplam, gross_total = KDV hariç (iskonto öncesi), total_vat = KDV
+          const isInv = src.kind === 'sales_invoice' || src.kind === 'purchase_bill';
+          const incl = num(a.net_total ?? a.total ?? a.amount);
+          const net = !isInv ? num(a.net_total ?? a.net_amount ?? a.total ?? a.amount)
+            : (incl !== null && num(a.total_vat) !== null ? incl - Number(a.total_vat)
+              : num(a.gross_total) !== null ? Number(a.gross_total) - (num(a.total_discount) || 0) - (num(a.total_invoice_discount) || 0) : incl);
           const dets = (d.relationships?.details?.data || []).map((r: any) => inc.get(`${r.type}:${r.id}`)).filter(Boolean);
           if (dets.length) lineMap.set(String(d.id), dets.map((x: any) => {
             const xa = x.attributes || {}; const pr = x.relationships?.product?.data; const p = pr ? inc.get(`${pr.type}:${pr.id}`) : null;
@@ -156,7 +161,7 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
             return { parasut_detail_id: String(x.id), description: xa.description || null, product_parasut_id: pr?.id ? String(pr.id) : null,
               product_name: p?.attributes?.name || null, product_code: p?.attributes?.code || null, quantity: num(xa.quantity), unit_price: num(xa.unit_price),
               discount_pct: xa.discount_type === 'percentage' ? num(xa.discount_value) : null, vat_rate: num(xa.vat_rate),
-              net_total_try: num(xa.net_total) === null ? null : sign * Number(xa.net_total) * (cur0 === 'TRY' ? 1 : rate0) };
+              net_total_try: sign * ((num(xa.quantity) || 0) * (num(xa.unit_price) || 0) * (1 - (xa.discount_type === 'percentage' ? (num(xa.discount_value) || 0) / 100 : 0)) - (xa.discount_type === 'amount' ? (num(xa.discount_value) || 0) : 0)) * (cur0 === 'TRY' ? 1 : rate0) };   // satır KDV hariç
           }));
           rows.push({
             organization_id: orgId, kind: src.kind, parasut_id: String(d.id),
@@ -165,7 +170,7 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
             contact_parasut_id: relRef?.id ? String(relRef.id) : null, contact_name: contact?.attributes?.name || null, tax_number: tax || null,
             category: cat?.attributes?.name || null, currency: cur, exchange_rate: rate,
             net_total: net === null ? null : sign * net, vat_total: num(a.total_vat) === null ? null : sign * Number(a.total_vat),
-            gross_total: num(a.gross_total ?? a.total) === null ? null : sign * Number(a.gross_total ?? a.total),
+            gross_total: (isInv ? incl : num(a.gross_total ?? a.total)) === null ? null : sign * Number(isInv ? incl : (a.gross_total ?? a.total)),   // KDV dahil
             net_total_try: net === null ? null : sign * net * (cur === 'TRY' ? 1 : rate),
             remaining: (a.remaining_in_trl ?? a.remaining) != null ? num(a.remaining_in_trl ?? a.remaining) : (a.payment_status && a.payment_status !== 'paid' ? num(a.gross_total ?? a.total) : null), payment_status: a.payment_status || null, synced_at: new Date().toISOString(),
           });
@@ -194,6 +199,30 @@ export async function syncOrg(admin: SupabaseClient, orgId: string, fromOverride
     }
     result.counts[src.kind] = n;
   }
+  // Paraşüt faturasından üretilmiş siparişlerin tutarlarını faturayla aynı tut (KDV hariç / KDV / KDV dahil)
+  try {
+    const { data: po } = await admin.from('orders').select('id, subtotal, total, parasut_document_id').eq('organization_id', orgId).not('parasut_document_id', 'is', null).limit(5000);
+    if (po?.length) {
+      const { data: pd } = await admin.from('parasut_documents').select('id, net_total_try, gross_total, currency, exchange_rate').in('id', po.map((o: any) => o.parasut_document_id));
+      const dm = new Map<string, any>((pd || []).map((d: any) => [d.id, d]));
+      let fixed = 0;
+      for (const o of po) {
+        const d = dm.get(o.parasut_document_id); if (!d) continue;
+        const rate = d.currency && d.currency !== 'TRY' ? Number(d.exchange_rate) || 1 : 1;
+        const sub = Math.round(Number(d.net_total_try) * 100) / 100, tot = Math.round(Number(d.gross_total ?? d.net_total_try) * rate * 100) / 100;
+        if (Math.abs(Number(o.subtotal) - sub) < 0.01 && Math.abs(Number(o.total) - tot) < 0.01) continue;
+        await admin.from('orders').update({ subtotal: sub, tax_total: Math.round((tot - sub) * 100) / 100, total: tot }).eq('id', o.id);
+        const { data: its } = await admin.from('order_items').select('id, total, quantity').eq('order_id', o.id);
+        const sum = (its || []).reduce((a: number, x: any) => a + (Number(x.total) || 0), 0);
+        if (sum > 0 && Math.abs(sum - sub) >= 0.01) {
+          const f = sub / sum;
+          for (const it of its || []) { const t = Math.round(Number(it.total) * f * 100) / 100; await admin.from('order_items').update({ total: t, unit_price: Math.round((t / (Number(it.quantity) || 1)) * 100) / 100 }).eq('id', it.id); }
+        }
+        fixed++;
+      }
+      if (fixed) result.orders_fixed = fixed;
+    }
+  } catch { /* sipariş tablosu yoksa geç */ }
   // Müşteri eşleştirmesi: yalnızca henüz eşleşmemiş satış faturaları (elle yapılan eşleştirme korunur)
   try {
     const { data: un } = await admin.from('parasut_documents').select('id, tax_number, contact_name').eq('organization_id', orgId).eq('kind', 'sales_invoice').is('customer_id', null).limit(5000);

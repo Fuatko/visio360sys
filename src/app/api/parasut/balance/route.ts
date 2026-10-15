@@ -72,7 +72,7 @@ export async function GET(request: Request) {
             {
               const cr = d.relationships?.category?.data; const cat = cr ? inc.get(`${cr.type}:${cr.id}`)?.attributes?.name : null;
               const cur = a.currency === 'TRL' || !a.currency ? 'TRY' : a.currency; const rate = Number(a.exchange_rate) || 1; const sg = a.item_type === 'refund' ? -1 : 1;
-              const net = Number(a.net_total ?? a.total) || 0;
+              const net = a.total_vat != null ? (Number(a.net_total ?? a.total) || 0) - Number(a.total_vat) : (Number(a.gross_total) || Number(a.net_total) || 0);   // KDV hariç
               all.push({ kind: k.kind, contact_id: c.id, issue_date: String(a.issue_date || '').slice(0, 10) || null, category: cat || null,
                 net_try: sg * net * (cur === 'TRY' ? 1 : rate), open_try: a.payment_status === 'paid' ? 0 : Math.abs(rem0) });
             }
