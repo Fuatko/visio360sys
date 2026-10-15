@@ -1,6 +1,7 @@
 'use client';
 import { loadTargets } from '@/lib/targets';
-import { withParasutCollections } from '@/lib/parasut-facts';
+import { withParasutCollections, withParasutOrders } from '@/lib/parasut-facts';
+import { orderNetAmount } from '@/lib/sales-flow';
 
 import Header from '@/components/Header';
 import { Card } from '@/components/ui';
@@ -138,13 +139,14 @@ export default function ExecutiveDashboard() {
     setLoading(true);
     try {
       // Fetch all required data
-      const [targetsRes, collectionsRes, opportunitiesRes, teamRes, customersRes, commissionRes] = await Promise.all([
+      const [targetsRes, collectionsRes, opportunitiesRes, teamRes, customersRes, commissionRes, ordersRes] = await Promise.all([
         loadTargets(supabase).then((data: any[]) => ({ data, error: null })),
         supabase.from('collections').select('*'),
         supabase.from('opportunities').select('*'),
         supabase.from('sales_team').select('*').eq('is_active', true),
         supabase.from('customers').select('*'),
-        supabase.from('commission_results').select('*')
+        supabase.from('commission_results').select('*'),
+        supabase.from('orders').select('*'),
       ]);
 
       const targets = targetsRes.data || [];
@@ -154,11 +156,20 @@ export default function ExecutiveDashboard() {
       const customers = customersRes.data || [];
       const commissions = commissionRes.data || [];
 
-      // Calculate KPIs
-      const totalSales = targets.reduce((sum, t) => sum + Number(t.achieved_sales || t.actual_sales || 0), 0);
-      const totalTarget = targets.reduce((sum, t) => sum + Number(t.sales_target || t.target_amount || 0), 0);
-      const totalCollection = collections.filter(c => c.status === 'Ödendi').reduce((sum, c) => sum + (c.amount || 0), 0);
-      const collectionTarget = collections.reduce((sum, c) => sum + (c.amount || 0), 0);
+      // KPI'lar bu yıla göre; satış = sipariş + Paraşüt faturaları (KDV hariç), tahsilat KDV hariç karşılığı
+      const year = String(new Date().getFullYear());
+      const nowP = new Date().toISOString().slice(0, 7);
+      const orders = (await withParasutOrders(supabase, (ordersRes as any).data || [])).filter((o: any) => !['cancelled', 'İptal', 'draft', 'Taslak'].includes(o.status));
+      const oDate = (o: any) => String(o.order_date || o.created_at || '');
+      const net = (c: any) => (c.amount_net != null ? Number(c.amount_net) : Number(c.amount || 0) / 1.2);
+      const yearOrders = orders.filter((o: any) => oDate(o).startsWith(year));
+      const totalSales = yearOrders.reduce((sum: number, o: any) => sum + orderNetAmount(o), 0);
+      const yearTargets = targets.filter((t: any) => String(t.period || '').startsWith(year));
+      const totalTarget = yearTargets.reduce((sum: number, t: any) => sum + Number(t.sales_target || t.target_amount || 0), 0);
+      const ytdTarget = yearTargets.filter((t: any) => String(t.period) <= nowP).reduce((sum: number, t: any) => sum + Number(t.sales_target || t.target_amount || 0), 0);
+      const yearColls = collections.filter((c: any) => String(c.due_date || c.payment_date || c.created_at || '').startsWith(year));
+      const totalCollection = yearColls.filter((c: any) => c.status === 'Ödendi' || c.status === 'paid').reduce((sum: number, c: any) => sum + net(c), 0);
+      const collectionTarget = yearColls.reduce((sum: number, c: any) => sum + net(c), 0);
       const pipelineValue = opportunities.filter(o => o.stage !== 'Kaybedildi' && o.stage !== 'Kazanıldı')
         .reduce((sum, o) => sum + (o.value || 0), 0);
       const hardStopCount = commissions.filter(c => c.hard_stop).length;
@@ -193,7 +204,7 @@ export default function ExecutiveDashboard() {
       setAging(agingCalc);
 
       // Calculate Health Scores
-      const salesRatio = totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0;
+      const salesRatio = ytdTarget > 0 ? (totalSales / ytdTarget) * 100 : 0;   // bugüne kadarki hedefe göre
       const collectionRatio = collectionTarget > 0 ? (totalCollection / collectionTarget) * 100 : 0;
       const hardStopRatio = team.length > 0 ? ((team.length - hardStopCount) / team.length) * 100 : 100;
       const agingRisk = agingCalc.total > 0 ? 
@@ -203,7 +214,7 @@ export default function ExecutiveDashboard() {
       const collectionHealth = Math.min(100, collectionRatio);
       const cashFlowHealth = agingRisk;
       const teamHealth = hardStopRatio;
-      const overallScore = Math.round((salesHealth + collectionHealth + cashFlowHealth + teamHealth) / 4);
+      const overallScore = Math.round(ytdTarget > 0 ? (salesHealth + collectionHealth + cashFlowHealth + teamHealth) / 4 : (collectionHealth + cashFlowHealth + teamHealth) / 3);
 
       setHealth({
         overallScore,
@@ -246,12 +257,12 @@ export default function ExecutiveDashboard() {
         });
       }
       
-      if (salesRatio < 80) {
+      if (ytdTarget > 0 && salesRatio < 80) {
         newAlerts.push({
           id: '4',
           type: 'warning',
           title: 'Satış Hedefinde Sapma',
-          description: `Hedef gerçekleşme: %${salesRatio.toFixed(0)}`,
+          description: `Bugüne kadarki hedefin %${salesRatio.toFixed(0)}'i gerçekleşti`,
           value: salesRatio
         });
       }
@@ -277,9 +288,9 @@ export default function ExecutiveDashboard() {
 
         monthlyData.push({
           name: MONTHS[month],
-          sales: monthTargets.reduce((sum, t) => sum + Number(t.achieved_sales || t.actual_sales || 0), 0),
+          sales: orders.filter((o: any) => oDate(o).startsWith(monthKey)).reduce((sum: number, o: any) => sum + orderNetAmount(o), 0),
           target: monthTargets.reduce((sum, t) => sum + Number(t.sales_target || t.target_amount || 0), 0),
-          collection: monthCollections.reduce((sum, c) => sum + (c.amount || 0), 0)
+          collection: monthCollections.reduce((sum: number, c: any) => sum + net(c), 0)
         });
       }
       setTrendData(monthlyData);
@@ -383,10 +394,10 @@ export default function ExecutiveDashboard() {
           <Card className="p-5 bg-gradient-to-br from-blue-500 to-blue-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/opportunities')}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-blue-100 text-sm">Toplam Satış</p>
-                <p className="text-2xl font-bold mt-1">₺{formatMoney(kpis.totalSales)}</p>
+                <p className="text-blue-100 text-sm">Satış · {new Date().getFullYear()} <span className="opacity-70">(KDV hariç)</span></p>
+                <p className="text-2xl font-bold mt-1">₺{formatMoney(Math.round(kpis.totalSales))}</p>
                 <p className="text-blue-200 text-xs mt-1">
-                  Hedef: ₺{formatMoney(kpis.totalTarget)} ({kpis.totalTarget > 0 ? ((kpis.totalSales / kpis.totalTarget) * 100).toFixed(0) : 0}%)
+                  {kpis.totalTarget > 0 ? <>Yıllık hedef: ₺{formatMoney(Math.round(kpis.totalTarget))} (%{((kpis.totalSales / kpis.totalTarget) * 100).toFixed(0)})</> : 'Hedef tanımlı değil'}
                 </p>
               </div>
               <DollarSign className="h-10 w-10 text-blue-200" />
@@ -396,8 +407,8 @@ export default function ExecutiveDashboard() {
           <Card className="p-5 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white cursor-pointer hover:shadow-xl hover:scale-[1.02] transition-all duration-200" onClick={() => router.push('/collections')}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-emerald-100 text-sm">Tahsilat</p>
-                <p className="text-2xl font-bold mt-1">₺{formatMoney(kpis.totalCollection)}</p>
+                <p className="text-emerald-100 text-sm">Tahsilat · {new Date().getFullYear()} <span className="opacity-70">(KDV hariç)</span></p>
+                <p className="text-2xl font-bold mt-1">₺{formatMoney(Math.round(kpis.totalCollection))}</p>
                 <p className="text-emerald-200 text-xs mt-1">
                   Oran: %{kpis.collectionTarget > 0 ? ((kpis.totalCollection / kpis.collectionTarget) * 100).toFixed(0) : 0}
                 </p>
@@ -484,23 +495,23 @@ export default function ExecutiveDashboard() {
             </div>
             <div className="mt-4 grid grid-cols-5 gap-2 text-center text-xs">
               <div className="p-2 bg-emerald-50 rounded">
-                <p className="text-emerald-600 font-bold">₺{formatMoney(aging.current)}</p>
+                <p className="text-emerald-600 font-bold">₺{formatMoney(Math.round(aging.current))}</p>
                 <p className="text-slate-500">Vadesi Gelmemiş</p>
               </div>
               <div className="p-2 bg-amber-50 rounded">
-                <p className="text-amber-600 font-bold">₺{formatMoney(aging.days30)}</p>
+                <p className="text-amber-600 font-bold">₺{formatMoney(Math.round(aging.days30))}</p>
                 <p className="text-slate-500">0-30 Gün</p>
               </div>
               <div className="p-2 bg-orange-50 rounded">
-                <p className="text-orange-600 font-bold">₺{formatMoney(aging.days60)}</p>
+                <p className="text-orange-600 font-bold">₺{formatMoney(Math.round(aging.days60))}</p>
                 <p className="text-slate-500">31-60 Gün</p>
               </div>
               <div className="p-2 bg-red-50 rounded">
-                <p className="text-red-600 font-bold">₺{formatMoney(aging.days90)}</p>
+                <p className="text-red-600 font-bold">₺{formatMoney(Math.round(aging.days90))}</p>
                 <p className="text-slate-500">61-90 Gün</p>
               </div>
               <div className="p-2 bg-red-100 rounded">
-                <p className="text-red-700 font-bold">₺{formatMoney(aging.days120Plus)}</p>
+                <p className="text-red-700 font-bold">₺{formatMoney(Math.round(aging.days120Plus))}</p>
                 <p className="text-slate-500">90+ Gün</p>
               </div>
             </div>
