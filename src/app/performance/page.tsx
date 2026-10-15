@@ -1,4 +1,5 @@
 'use client';
+import { loadTargets } from '@/lib/targets';
 
 import Header from '@/components/Header';
 import SalesFilter from '@/components/SalesFilter';
@@ -46,7 +47,7 @@ export default function PerformancePage() {
     try {
       const [teamRes, targetRes, oppRes] = await Promise.all([
         supabase.from('sales_team').select('id, name, region, title').eq('status', 'active'),
-        supabase.from('targets').select('sales_person_id, sales_target, collection_target, achieved_sales, achieved_collection').eq('period', selectedPeriod),
+        loadTargets(supabase).then((d: any[]) => ({ data: d.filter(t => t.period === selectedPeriod), error: null })),
         supabase.from('opportunities').select('assigned_to, value, probability, stage'),
       ]);
       setSalesTeam(teamRes.data || []);

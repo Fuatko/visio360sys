@@ -1,4 +1,5 @@
 'use client';
+import { loadTargets } from '@/lib/targets';
 import { withParasutCollections } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
@@ -24,7 +25,7 @@ export default function ReportsPage() {
     setLoading(true);
     try {
       const [targetRes, collRes, oppRes, custRes, teamRes] = await Promise.all([
-        supabase.from('targets').select('*'),
+        loadTargets(supabase).then((data: any[]) => ({ data, error: null })),
         supabase.from('collections').select('*'),
         supabase.from('opportunities').select('*'),
         supabase.from('customers').select('*'),

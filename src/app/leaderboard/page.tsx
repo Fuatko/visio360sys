@@ -1,4 +1,5 @@
 'use client';
+import { loadTargets } from '@/lib/targets';
 
 import Header from '@/components/Header';
 import { Card, Badge } from '@/components/ui';
@@ -143,7 +144,7 @@ export default function LeaderboardPage() {
     try {
       const [teamRes, targetsRes, collectionsRes, opportunitiesRes] = await Promise.all([
         supabase.from('sales_team').select('*').eq('is_active', true),
-        supabase.from('targets').select('*'),
+        loadTargets(supabase).then((data: any[]) => ({ data, error: null })),
         supabase.from('collections').select('*'),
         supabase.from('opportunities').select('*')
       ]);

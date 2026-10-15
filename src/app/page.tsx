@@ -1,4 +1,5 @@
 'use client';
+import { loadTargets } from '@/lib/targets';
 import { withParasutCollections, withParasutOrders } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
@@ -115,9 +116,7 @@ export default function Dashboard() {
         .select('*');
 
       // Hedefler (dönem bazlı: period = 'YYYY-MM')
-      const { data: targets } = await supabase
-        .from('targets')
-        .select('*');
+      const { data: targets } = { data: await loadTargets(supabase) };
 
       // Siparişler (gerçekleşen satış)
       const { data: ordersRaw } = await supabase
@@ -167,8 +166,10 @@ export default function Dashboard() {
       // Tahsilat: bu yıla ait alacaklar (KDV dahil) — satışla aynı dönem
       const inYear = (c: any) => String(c.due_date || c.payment_date || c.created_at || '').startsWith(year);
       const yearColls = colls.filter(inYear);
-      const collectionTarget = yearColls.reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
-      const totalCollection = yearColls.filter(isPaid).reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+      // Satışla aynı ölçü: KDV hariç (Paraşüt kayıtlarında fatura oranıyla, diğerlerinde %20 KDV varsayımıyla)
+      const netAmt = (c: any) => c.amount_net != null ? Number(c.amount_net) : Number(c.amount || 0) / 1.2;
+      const collectionTarget = yearColls.reduce((s: number, c: any) => s + netAmt(c), 0);
+      const totalCollection = yearColls.filter(isPaid).reduce((s: number, c: any) => s + netAmt(c), 0);
 
       const wonOpps = opps.filter(isWon);
       const openOpps = opps.filter((o: any) => !isWon(o) && !isLost(o));
@@ -222,7 +223,7 @@ export default function Dashboard() {
           month: MONTHS[d.getMonth()],
           satış: ords.filter((o: any) => String(orderDate(o) || '').startsWith(key)).reduce((s: number, o: any) => s + orderTotal(o), 0),
           hedef: tgts.filter((t: any) => String(t.period || '').startsWith(key)).reduce((s: number, t: any) => s + Number(t.sales_target || 0), 0),
-          tahsilat: colls.filter((c: any) => isPaid(c) && String(c.payment_date || '').startsWith(key)).reduce((s: number, c: any) => s + Number(c.amount || 0), 0),
+          tahsilat: colls.filter((c: any) => isPaid(c) && String(c.payment_date || '').startsWith(key)).reduce((s: number, c: any) => s + (c.amount_net != null ? Number(c.amount_net) : Number(c.amount || 0) / 1.2), 0),
         });
       }
       setMonthlyData(monthlyTrend);
@@ -316,7 +317,7 @@ export default function Dashboard() {
             <CardBody className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-emerald-100 text-sm">Tahsilat · {new Date().getFullYear()} <span className="opacity-70">(KDV dahil)</span></p>
+                  <p className="text-emerald-100 text-sm">Tahsilat · {new Date().getFullYear()} <span className="opacity-70">(KDV hariç)</span></p>
                   <p className="text-2xl font-bold mt-1">₺{formatMoney(Math.round(stats.totalCollection))}</p>
                   <p className="text-emerald-200 text-xs mt-1">
                     Faturalanan: ₺{formatMoney(Math.round(stats.collectionTarget))} · açık ₺{formatMoney(Math.round(stats.collectionTarget - stats.totalCollection))}
@@ -467,7 +468,7 @@ export default function Dashboard() {
                   <Area 
                     type="monotone" 
                     dataKey="tahsilat" 
-                    name="Tahsilat (KDV dahil)"
+                    name="Tahsilat (KDV hariç)"
                     stroke="#10b981" 
                     fillOpacity={1} 
                     fill="url(#colorTahsilat)"

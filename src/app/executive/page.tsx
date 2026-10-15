@@ -1,4 +1,5 @@
 'use client';
+import { loadTargets } from '@/lib/targets';
 import { withParasutCollections } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
@@ -138,7 +139,7 @@ export default function ExecutiveDashboard() {
     try {
       // Fetch all required data
       const [targetsRes, collectionsRes, opportunitiesRes, teamRes, customersRes, commissionRes] = await Promise.all([
-        supabase.from('targets').select('*'),
+        loadTargets(supabase).then((data: any[]) => ({ data, error: null })),
         supabase.from('collections').select('*'),
         supabase.from('opportunities').select('*'),
         supabase.from('sales_team').select('*').eq('is_active', true),

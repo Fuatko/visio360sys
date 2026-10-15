@@ -43,9 +43,10 @@ export function salesAsCollections(docs: ParasutSale[]) {
   docs.forEach(d => {
     const gross = grossTryOf(d); if (gross <= 0) return;
     const open = openOf(d); const paid = gross - open;
+    const r = gross > 0 ? Math.min(1, Math.max(0, n(d.net_total_try) / gross)) : 1 / 1.2;   // KDV hariç oranı
     const base = { customer_id: d.customer_id, invoice_number: d.doc_no, source: 'parasut', readonly: true, created_at: d.issue_date };
-    if (paid >= 0.5) out.push({ ...base, id: `parasut-p-${d.id}`, amount: paid, status: 'Ödendi', due_date: d.due_date || d.issue_date, payment_date: d.due_date || d.issue_date, collection_date: d.due_date || d.issue_date });
-    if (open >= 0.5) out.push({ ...base, id: `parasut-o-${d.id}`, amount: open, status: (d.due_date || d.issue_date || '9') < new Date().toISOString().slice(0, 10) ? 'Gecikmiş' : 'Bekliyor', due_date: d.due_date || d.issue_date, payment_date: null });
+    if (paid >= 0.5) out.push({ ...base, id: `parasut-p-${d.id}`, amount: paid, amount_net: paid * r, status: 'Ödendi', due_date: d.due_date || d.issue_date, payment_date: d.due_date || d.issue_date, collection_date: d.due_date || d.issue_date });
+    if (open >= 0.5) out.push({ ...base, id: `parasut-o-${d.id}`, amount: open, amount_net: open * r, status: (d.due_date || d.issue_date || '9') < new Date().toISOString().slice(0, 10) ? 'Gecikmiş' : 'Bekliyor', due_date: d.due_date || d.issue_date, payment_date: null });
   });
   return out;
 }

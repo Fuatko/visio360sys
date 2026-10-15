@@ -90,7 +90,13 @@ export default function TargetsPage() {
       if (editingTarget) {
         { const { error: dbErr } = await supabase.from('sales_targets').update(cleanPayload(formData)).eq('id', editingTarget.id); if (dbErr) throw dbErr; }
       } else {
-        { const { error: dbErr } = await supabase.from('sales_targets').insert(cleanPayload([formData])); if (dbErr) throw dbErr; }
+        {
+          // Eski kurulumlarda zorunlu olan target_month / rep_id alanlarını dönemden doldur
+          const legacy: any = { ...formData, target_month: `${formData.period}-01`, rep_id: formData.sales_person_id };
+          let { error: dbErr } = await supabase.from('sales_targets').insert(cleanPayload([legacy]));
+          if (dbErr && /column|schema cache|invalid input|type/i.test(dbErr.message)) ({ error: dbErr } = await supabase.from('sales_targets').insert(cleanPayload([formData])));
+          if (dbErr) throw dbErr;
+        }
       }
       setModalOpen(false);
       fetchData();

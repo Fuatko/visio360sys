@@ -1,4 +1,5 @@
 'use client';
+import { loadTargets } from '@/lib/targets';
 
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, EmptyState, ProgressBar } from '@/components/ui';
@@ -507,7 +508,7 @@ export default function SWOTAnalysisPage() {
     try {
       // Tüm veriyi çek (şirket ayrımı veritabanında yapılıyor), kişi bazında filtrele
       const [targetsRes, opportunitiesRes, collectionsRes, customersRes, activitiesRes] = await Promise.all([
-        supabase.from('targets').select('*'),
+        loadTargets(supabase).then((data: any[]) => ({ data, error: null })),
         supabase.from('opportunities').select('*'),
         supabase.from('collections').select('*'),
         supabase.from('customers').select('*'),
