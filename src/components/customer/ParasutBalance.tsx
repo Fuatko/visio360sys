@@ -60,6 +60,11 @@ export default function ParasutBalance({ customerId, roles = [], onDocs }: { cus
   return (
     <Card className="p-4">
       <p className="flex items-center gap-1 text-sm font-semibold"><Wallet className="h-4 w-4 text-indigo-600" />Cari durum (Paraşüt)</p>
+      {useLive && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className={`rounded-lg p-2 ${s(pay) >= 0.5 ? 'bg-red-50' : 'bg-slate-50'}`}><p className="text-[11px] text-slate-500">Ödeyeceğiniz (açık fatura)</p><p className={`text-lg font-bold ${s(pay) >= 0.5 ? 'text-red-600' : 'text-slate-700'}`}>{tl(s(pay))}</p></div>
+          <div className={`rounded-lg p-2 ${s(rec) >= 0.5 ? 'bg-emerald-50' : 'bg-slate-50'}`}><p className="text-[11px] text-slate-500">Tahsil edeceğiniz (açık fatura)</p><p className={`text-lg font-bold ${s(rec) >= 0.5 ? 'text-emerald-700' : 'text-slate-700'}`}>{tl(s(rec))}</p></div>
+        </div>)}
       <Section title={salesTitle} g={salesG} color="text-emerald-700" />
       <Section title={buyTitle} g={buyG} color="text-amber-700" />
       {salesG.length > 0 && buyG.length > 0 && (
