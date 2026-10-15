@@ -164,19 +164,22 @@ export default function Dashboard() {
       const totalTarget = yearTargets.reduce((s: number, t: any) => s + Number(t.sales_target || 0), 0);
       const yearOrders = ords.filter((o: any) => String(orderDate(o) || '').startsWith(year));
       const totalSales = yearOrders.reduce((s: number, o: any) => s + orderTotal(o), 0);
-      const collectionTarget = colls.reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
-      const totalCollection = colls.filter(isPaid).reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+      // Tahsilat: bu yıla ait alacaklar (KDV dahil) — satışla aynı dönem
+      const inYear = (c: any) => String(c.due_date || c.payment_date || c.created_at || '').startsWith(year);
+      const yearColls = colls.filter(inYear);
+      const collectionTarget = yearColls.reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
+      const totalCollection = yearColls.filter(isPaid).reduce((s: number, c: any) => s + Number(c.amount || 0), 0);
 
       const wonOpps = opps.filter(isWon);
       const openOpps = opps.filter((o: any) => !isWon(o) && !isLost(o));
       const pipelineValue = openOpps.reduce((s: number, o: any) => s + Number(o.value || 0), 0);
 
       // Bu ay eklenen müşteri sayısı
-      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-      const { count: newCustomerCount } = await supabase
-        .from('customers')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', monthStart);
+      // Yeni müşteri = ilk siparişi / faturası bu ay olan müşteri (karta kayıt tarihi değil)
+      const monthKey = new Date().toISOString().slice(0, 7);
+      const firstBuy = new Map<string, string>();
+      ords.forEach((o: any) => { const d = String(orderDate(o) || '').slice(0, 10); if (!o.customer_id || !d) return; const p = firstBuy.get(o.customer_id); if (!p || d < p) firstBuy.set(o.customer_id, d); });
+      const newCustomerCount = Array.from(firstBuy.values()).filter(d => d.startsWith(monthKey)).length;
 
       // Hard stop risk - tahsilat %70 altında olanlar
       const hardStopRisk = (teamData || []).filter((t: any) => {
@@ -195,7 +198,7 @@ export default function Dashboard() {
         collectionRatio: collectionTarget > 0 ? totalCollection / collectionTarget : 0,
         pipelineValue,
         customerCount: customerCount || 0,
-        newCustomers: newCustomerCount || 0,
+        newCustomers: newCustomerCount,
         opportunityCount: openOpps.length,
         wonOpportunities: wonOpps.length,
         pendingTasks: taskCount || 0,
@@ -283,10 +286,10 @@ export default function Dashboard() {
             <CardBody className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-indigo-100 text-sm">Toplam Satış</p>
-                  <p className="text-2xl font-bold mt-1">₺{formatMoney(stats.totalSales)}</p>
+                  <p className="text-indigo-100 text-sm">Satış · {new Date().getFullYear()} <span className="opacity-70">(KDV hariç)</span></p>
+                  <p className="text-2xl font-bold mt-1">₺{formatMoney(Math.round(stats.totalSales))}</p>
                   <p className="text-indigo-200 text-xs mt-1">
-                    Hedef: ₺{formatMoney(stats.totalTarget)}
+                    {stats.totalTarget > 0 ? <>Hedef: ₺{formatMoney(Math.round(stats.totalTarget))}</> : <span onClick={e => { e.stopPropagation(); router.push('/targets'); }} className="underline">Hedef tanımlı değil — hedef girin</span>}
                   </p>
                 </div>
                 <div className="p-3 bg-white/20 rounded-xl">
@@ -296,7 +299,7 @@ export default function Dashboard() {
               <div className="mt-3">
                 <div className="flex justify-between text-xs mb-1">
                   <span>Gerçekleşme</span>
-                  <span className="font-medium">{(stats.salesRatio * 100).toFixed(0)}%</span>
+                  <span className="font-medium">{stats.totalTarget > 0 ? `${(stats.salesRatio * 100).toFixed(0)}%` : '—'}</span>
                 </div>
                 <div className="w-full bg-white/20 rounded-full h-2">
                   <div 
@@ -313,10 +316,10 @@ export default function Dashboard() {
             <CardBody className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-emerald-100 text-sm">Tahsilat</p>
-                  <p className="text-2xl font-bold mt-1">₺{formatMoney(stats.totalCollection)}</p>
+                  <p className="text-emerald-100 text-sm">Tahsilat · {new Date().getFullYear()} <span className="opacity-70">(KDV dahil)</span></p>
+                  <p className="text-2xl font-bold mt-1">₺{formatMoney(Math.round(stats.totalCollection))}</p>
                   <p className="text-emerald-200 text-xs mt-1">
-                    Beklenen: ₺{formatMoney(stats.collectionTarget)}
+                    Faturalanan: ₺{formatMoney(Math.round(stats.collectionTarget))} · açık ₺{formatMoney(Math.round(stats.collectionTarget - stats.totalCollection))}
                   </p>
                 </div>
                 <div className="p-3 bg-white/20 rounded-xl">
@@ -455,7 +458,7 @@ export default function Dashboard() {
                   <Area 
                     type="monotone" 
                     dataKey="satış" 
-                    name="Satış"
+                    name="Satış (KDV hariç)"
                     stroke="#1b3a5c" 
                     fillOpacity={1} 
                     fill="url(#colorSatis)" 
@@ -464,7 +467,7 @@ export default function Dashboard() {
                   <Area 
                     type="monotone" 
                     dataKey="tahsilat" 
-                    name="Tahsilat"
+                    name="Tahsilat (KDV dahil)"
                     stroke="#10b981" 
                     fillOpacity={1} 
                     fill="url(#colorTahsilat)"
