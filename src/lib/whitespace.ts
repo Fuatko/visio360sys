@@ -39,7 +39,7 @@ export type WSData = {
   stats: Record<string, { buyers: number; avg: number; penetration: number }>;
   unmatchedSupply: Record<string, { buy12: number; count: number; cats: string[] }>;  // satış kategorisine eşleşmeyen alışlar
   buyScanned: number;                    // okunan alış faturası sayısı (teşhis için)
-  supplyCats: Record<string, { cat: string; raw: string; count: number; buy12: number; buyAll: number; off: string | null; mapped: boolean; docs: { date: string; amount: number }[] }[]>;  // firmadan alışlar, gider kategorisi bazında
+  supplyCats: Record<string, { cat: string; raw: string; count: number; buy12: number; buyAll: number; off: string | null; mapped: boolean; docs: { date: string; amount: number; no: string | null; text: string | null; party: string | null }[] }[]>;  // firmadan alışlar, gider kategorisi bazında
   buyParties: { name: string; count: number; tax: boolean; contact: boolean; linked: boolean }[];   // alış faturalarındaki firmalar (teşhis)
   liveBuyCount: number;                  // müşteri kartındaki canlı Paraşüt verisindeki alış belgesi sayısı
   suggestions: WSSuggestion[];
@@ -61,7 +61,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
     safe(supabase.from('whitespace_offerings').select('*')),
   ]);
   const [buys, catMap, taxRows] = await Promise.all([
-    fetchAll(() => supabase.from('parasut_documents').select('id, customer_id, tax_number, contact_parasut_id, contact_name, issue_date, net_total_try, category').eq('kind', 'purchase_bill').order('id')),
+    fetchAll(() => supabase.from('parasut_documents').select('id, customer_id, tax_number, contact_parasut_id, contact_name, doc_no, description, issue_date, net_total_try, category').eq('kind', 'purchase_bill').order('id')),
     safe(supabase.from('parasut_category_map').select('purchase_category, business_line')),
     safe(supabase.from('customers').select('id, name, legal_name, tax_number, merged_into').limit(10000)),
   ]);
@@ -210,12 +210,13 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
     || byFullName.get(key(b.contact_name).join(' ')) || (key(b.contact_name)[0] && byWord.get(key(b.contact_name)[0])) || null;
   const cand = buys.map((b: any) => ({ b, cust: custOfBuy(b) })).filter((x: any) => x.cust && n(x.b.net_total_try) > 0);
   // Kayıtlı alışlarda bu müşteri bulunamadıysa müşteri kartındaki canlı Paraşüt verisini kullan (Cari durum kutusu)
-  const liveList = (opts.liveBuys || []).filter((d: any) => d.kind === 'purchase_bill' && n(d.net_try) > 0);
+  // Yalnızca carisi açıkça bu firma olarak gelen, arşivlenmemiş belgeler
+  const liveList = (opts.liveBuys || []).filter((d: any) => d.kind === 'purchase_bill' && n(d.net_try) > 0 && d.verified !== false && !d.archived);
   if (opts.customerId && liveList.length > cand.filter((x: any) => x.cust === opts.customerId).length) {
     // Canlı Paraşüt verisi daha eksiksiz: bu müşteri için kayıtlı alışların yerine onu kullan
     for (let i = cand.length - 1; i >= 0; i--) if (cand[i].cust === opts.customerId) cand.splice(i, 1);
     liveList.forEach((d: any, i: number) =>
-      cand.push({ b: { id: `live-${i}`, category: d.category, net_total_try: n(d.net_try), issue_date: d.issue_date }, cust: opts.customerId }));
+      cand.push({ b: { id: `live-${i}`, category: d.category, net_total_try: n(d.net_try), issue_date: d.issue_date, doc_no: d.doc_no, description: d.description, party: d.party }, cust: opts.customerId }));
   }
   // Bu alımlarla kesilen satış faturaları (İş Kolları & Bayi İşleri eşleştirmesi) — kategori bulunamazsa satış faturasının kategorisi kullanılır
   const linkMap = new Map<string, string[]>();
@@ -236,7 +237,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
     const amt = n(b.net_total_try); const d = day(b.issue_date);
     const sc = ((supplyCats[cust] ||= []).find(x => x.cat === (cat || 'Kategorisiz'))) || (supplyCats[cust].push({ cat: cat || 'Kategorisiz', raw: cat, count: 0, buy12: 0, buyAll: 0, off: null, mapped: false, docs: [] }), supplyCats[cust][supplyCats[cust].length - 1]);
     sc.count++; sc.buyAll += amt; if (d >= yearAgo) sc.buy12 += amt; if (off) sc.off = off;
-    if (sc.docs.length < 10) sc.docs.push({ date: d, amount: amt });
+    if (sc.docs.length < 10) sc.docs.push({ date: d, amount: amt, no: b.doc_no || null, text: b.description || null, party: b.party || b.contact_name || null });
     sc.mapped = !!(cat && (mapOf.has(cat) || [...mapOf.keys()].some(k => low(k) === low(cat))));
     if (!off) {
       const u = (unmatchedSupply[cust] ||= { buy12: 0, count: 0, cats: [] });

@@ -79,8 +79,12 @@ export async function GET(request: Request) {
               const cr = d.relationships?.category?.data; const cat = cr ? inc.get(`${cr.type}:${cr.id}`)?.attributes?.name : null;
               const cur = a.currency === 'TRL' || !a.currency ? 'TRY' : a.currency; const rate = Number(a.exchange_rate) || 1; const sg = a.item_type === 'refund' ? -1 : 1;
               const net = a.total_vat != null ? (Number(a.net_total ?? a.total) || 0) - Number(a.total_vat) : (Number(a.gross_total) || Number(a.net_total) || 0);   // KDV hariç
+              const relObj = relId ? inc.get(`${d.relationships?.[k.rel]?.data?.type}:${relId}`) : null;
               all.push({ kind: k.kind, contact_id: c.id, issue_date: String(a.issue_date || '').slice(0, 10) || null, category: cat || null,
-                net_try: sg * net * (cur === 'TRY' ? 1 : rate), open_try: a.payment_status === 'paid' ? 0 : Math.abs(rem0) });
+                net_try: sg * net * (cur === 'TRY' ? 1 : rate), open_try: a.payment_status === 'paid' ? 0 : Math.abs(rem0),
+                // kaynağı doğrulamak için: belge no, açıklama, karşı taraf, arşiv durumu; verified = belgenin carisi bu cari olarak açıkça geldi
+                doc_no: [a.invoice_series, a.invoice_id ?? a.invoice_no].filter(Boolean).join('') || a.invoice_no || null, description: a.description || null,
+                party: relObj?.attributes?.name || null, archived: !!a.archived, verified: relId !== undefined && relId !== null, parasut_id: String(d.id) });
             }
             const rem = rem0;
             if (a.payment_status === 'paid' || Math.abs(rem) < 0.5) continue;

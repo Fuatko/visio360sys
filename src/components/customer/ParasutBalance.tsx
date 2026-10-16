@@ -37,7 +37,7 @@ export default function ParasutBalance({ customerId, roles = [], onDocs }: { cus
   const yr = String(new Date().getFullYear());
   const group = (kind: string) => {
     const m = new Map<string, { cat: string; ytd: number; total: number; open: number; n: number }>();
-    (d.all || []).filter(x => x.kind === kind).forEach(x => {
+    (d.all || []).filter(x => x.kind === kind && x.verified !== false && !x.archived).forEach(x => {
       const k = x.category || 'Kategorisiz'; const g = m.get(k) || { cat: k, ytd: 0, total: 0, open: 0, n: 0 };
       g.total += x.net_try; g.open += x.open_try; g.n++; if (String(x.issue_date || '').startsWith(yr)) g.ytd += x.net_try; m.set(k, g);
     });
