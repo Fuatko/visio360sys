@@ -39,7 +39,7 @@ export type WSData = {
   stats: Record<string, { buyers: number; avg: number; penetration: number }>;
   unmatchedSupply: Record<string, { buy12: number; count: number; cats: string[] }>;  // satış kategorisine eşleşmeyen alışlar
   buyScanned: number;                    // okunan alış faturası sayısı (teşhis için)
-  supplyCats: Record<string, { cat: string; raw: string; count: number; buy12: number; buyAll: number; off: string | null; mapped: boolean }[]>;  // firmadan alışlar, gider kategorisi bazında
+  supplyCats: Record<string, { cat: string; raw: string; count: number; buy12: number; buyAll: number; off: string | null; mapped: boolean; docs: { date: string; amount: number }[] }[]>;  // firmadan alışlar, gider kategorisi bazında
   buyParties: { name: string; count: number; tax: boolean; contact: boolean; linked: boolean }[];   // alış faturalarındaki firmalar (teşhis)
   liveBuyCount: number;                  // müşteri kartındaki canlı Paraşüt verisindeki alış belgesi sayısı
   suggestions: WSSuggestion[];
@@ -234,8 +234,9 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
     const linked = (linkMap.get(b.id) || []).map(id => salesById.get(id)).filter(Boolean);
     const off = supplyOff(cat) || (linked.length ? sellByLow.get(low(docOff.get(linked[0].id) || '')) || null : null);
     const amt = n(b.net_total_try); const d = day(b.issue_date);
-    const sc = ((supplyCats[cust] ||= []).find(x => x.cat === (cat || 'Kategorisiz'))) || (supplyCats[cust].push({ cat: cat || 'Kategorisiz', raw: cat, count: 0, buy12: 0, buyAll: 0, off: null, mapped: false }), supplyCats[cust][supplyCats[cust].length - 1]);
+    const sc = ((supplyCats[cust] ||= []).find(x => x.cat === (cat || 'Kategorisiz'))) || (supplyCats[cust].push({ cat: cat || 'Kategorisiz', raw: cat, count: 0, buy12: 0, buyAll: 0, off: null, mapped: false, docs: [] }), supplyCats[cust][supplyCats[cust].length - 1]);
     sc.count++; sc.buyAll += amt; if (d >= yearAgo) sc.buy12 += amt; if (off) sc.off = off;
+    if (sc.docs.length < 10) sc.docs.push({ date: d, amount: amt });
     sc.mapped = !!(cat && (mapOf.has(cat) || [...mapOf.keys()].some(k => low(k) === low(cat))));
     if (!off) {
       const u = (unmatchedSupply[cust] ||= { buy12: 0, count: 0, cats: [] });

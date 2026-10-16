@@ -82,7 +82,7 @@ export default function CrossSell({ supabase, customer, liveDocs = [] }: { supab
                       <option value="">{sc.off ? 'Eşlemeyi kaldır' : 'Seçin (eşleşmedi)'}</option>
                       {d.offerings.filter(o => o !== UNCATEGORIZED).map(o => <option key={o} value={o}>{o}</option>)}
                     </select>
-                  ) : <span className="text-xs text-amber-700">Paraşüt'te kategori verilmemiş</span>}
+                  ) : <span className="text-xs text-amber-700">Paraşüt'te kategori verilmemiş: {sc.docs.map(x => `${x.date ? new Date(x.date).toLocaleDateString('tr-TR') : '-'} (${tl(x.amount)} + KDV)`).join(', ')}</span>}
                   {sc.off && !sc.mapped && <span className="ml-2 text-[11px] text-slate-400">ad benzerliğinden</span>}
                 </td>
               </tr>))}</tbody>
