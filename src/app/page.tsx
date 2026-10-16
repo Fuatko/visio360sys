@@ -4,6 +4,7 @@ import { withParasutCollections, withParasutOrders } from '@/lib/parasut-facts';
 
 import Header from '@/components/Header';
 import UserDashboard from '@/components/UserDashboard';
+import DashboardReminders from '@/components/reminders/DashboardReminders';
 import { useRole } from '@/components/RoleBasedDashboard';
 import { Card, CardHeader, CardTitle, CardBody, Badge, ProgressBar } from '@/components/ui';
 import { formatMoney } from '@/lib/utils';
@@ -61,6 +62,7 @@ export default function Dashboard() {
       <div>
         <Header title="Dashboard" subtitle="Kişisel Performans Paneli" />
         <div className="p-6">
+          <DashboardReminders supabase={createClient()} mineOnly />
           <UserDashboard />
         </div>
       </div>
@@ -424,6 +426,8 @@ export default function Dashboard() {
             )}
           </div>
         )}
+
+        <DashboardReminders supabase={supabase} />
 
         {/* Charts Row */}
         <div className="grid gap-6 lg:grid-cols-2 mb-6">

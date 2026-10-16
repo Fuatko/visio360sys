@@ -15,9 +15,11 @@ import { loadParasutSales, mergeParasut } from '@/lib/parasut-facts';
 import ParasutBalance from '@/components/customer/ParasutBalance';
 import RelationRoles from '@/components/customer/RelationRoles';
 import { Addresses, AccountTeam, InstalledBase } from '@/components/customer/Related';
+import CrossSell from '@/components/customer/CrossSell';
+import CustomerReminders from '@/components/reminders/CustomerReminders';
 import { ArrowLeft, Star, ShieldAlert, Building2, Sparkles, FileSignature, Target, AlertTriangle, GitMerge, CalendarClock, Network } from 'lucide-react';
 
-type Tab = 'overview' | 'info' | 'contacts' | 'addresses' | 'base';
+type Tab = 'overview' | 'info' | 'contacts' | 'addresses' | 'base' | 'crosssell';
 const tl = (v: any) => `₺${formatMoney(Math.round(Number(v) || 0))}`;
 const n = (v: any) => Number(v) || 0;
 const safe = async (q: any) => { const r = await q; return r.error ? [] : r.data || []; };
@@ -121,7 +123,7 @@ export default function CustomerCardPage() {
   };
 
   const TABS: [Tab, string, number?][] = [['overview', 'Özet & zaman çizelgesi'], ['info', 'Firma bilgileri'], ['contacts', 'Kişiler', rel.contacts.filter((x: any) => x.is_active !== false).length],
-    ['addresses', 'Adresler', rel.addresses.length], ['base', 'Kurulu baz', rel.base.length]];
+    ['addresses', 'Adresler', rel.addresses.length], ['base', 'Kurulu baz', rel.base.length], ['crosssell', 'Çapraz satış']];
 
   return (
     <div>
@@ -177,6 +179,7 @@ export default function CustomerCardPage() {
           <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
             <Timeline data={tld} contacts={rel.contacts} team={team} me={me} onAddActivity={addActivity} />
             <div className="space-y-4">
+              <CustomerReminders supabase={supabase} customerId={c.id} />
               <RelationRoles supabase={supabase} customer={c} docs={pDocs} onChanged={load} />
               <ParasutBalance customerId={c.id} roles={c.relation_roles || []} onDocs={setPDocs} />
               <Card className={`p-4 ${!c.next_step ? 'border-amber-300' : ''}`}>
@@ -209,6 +212,7 @@ export default function CustomerCardPage() {
         {tab === 'contacts' && <Contacts supabase={supabase} customerId={c.id} contacts={rel.contacts} consents={rel.consents} onChanged={load} />}
         {tab === 'addresses' && <Addresses supabase={supabase} customerId={c.id} rows={rel.addresses} onChanged={load} />}
         {tab === 'base' && <InstalledBase supabase={supabase} customerId={c.id} rows={rel.base} onChanged={load} />}
+        {tab === 'crosssell' && <CrossSell supabase={supabase} customer={c} />}
       </div>
     </div>
   );
