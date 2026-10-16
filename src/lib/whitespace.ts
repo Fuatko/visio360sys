@@ -39,6 +39,7 @@ export type WSData = {
   stats: Record<string, { buyers: number; avg: number; penetration: number }>;
   unmatchedSupply: Record<string, { buy12: number; count: number; cats: string[] }>;  // satış kategorisine eşleşmeyen alışlar
   buyScanned: number;                    // okunan alış faturası sayısı (teşhis için)
+  supplyCats: Record<string, { cat: string; raw: string; count: number; buy12: number; buyAll: number; off: string | null; mapped: boolean }[]>;  // firmadan alışlar, gider kategorisi bazında
   buyParties: { name: string; count: number; tax: boolean; contact: boolean; linked: boolean }[];   // alış faturalarındaki firmalar (teşhis)
   liveBuyCount: number;                  // müşteri kartındaki canlı Paraşüt verisindeki alış belgesi sayısı
   suggestions: WSSuggestion[];
@@ -183,11 +184,12 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
   taxRows.forEach((c: any) => { const t = String(c.tax_number || '').replace(/\D/g, ''); if (t && !byTax.has(t)) byTax.set(t, c.id); });
   const sellOffs = offerings.filter(o => o !== UNCATEGORIZED);
   const sellByLow = new Map<string, string>(sellOffs.map(o => [low(o), o]));
+  // Not: satış kategorilerinde yaptığınız birleştirme (ör. HİZMET → Danışmanlık) alış faturalarına UYGULANMAZ
   const supplyOff = (cat: string) => {
     if (!cat) return null;
     const mapped = mapOf.get(cat) || [...mapOf.entries()].find(([k]) => low(k) === low(cat))?.[1];
-    if (mapped) { const k = sellByLow.get(low(canon(mapped))) || sellByLow.get(low(mapped)); if (k) return k; }
-    const k = sellByLow.get(low(canon(cat))) || sellByLow.get(low(cat)); if (k) return k;
+    if (mapped) return sellByLow.get(low(mapped)) || sellByLow.get(low(canon(mapped))) || null;
+    const k = sellByLow.get(low(cat)); if (k) return k;
     const lc = low(cat); return sellOffs.find(o => lc.includes(low(o)) || low(o).includes(lc)) || null;
   };
   // Firmaya ait alış faturaları (müşteri eşleşmesi veya vergi no)
@@ -208,8 +210,11 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
     || byFullName.get(key(b.contact_name).join(' ')) || (key(b.contact_name)[0] && byWord.get(key(b.contact_name)[0])) || null;
   const cand = buys.map((b: any) => ({ b, cust: custOfBuy(b) })).filter((x: any) => x.cust && n(x.b.net_total_try) > 0);
   // Kayıtlı alışlarda bu müşteri bulunamadıysa müşteri kartındaki canlı Paraşüt verisini kullan (Cari durum kutusu)
-  if (opts.customerId && opts.liveBuys?.length && !cand.some((x: any) => x.cust === opts.customerId)) {
-    opts.liveBuys.filter((d: any) => d.kind === 'purchase_bill' && n(d.net_try) > 0).forEach((d: any, i: number) =>
+  const liveList = (opts.liveBuys || []).filter((d: any) => d.kind === 'purchase_bill' && n(d.net_try) > 0);
+  if (opts.customerId && liveList.length > cand.filter((x: any) => x.cust === opts.customerId).length) {
+    // Canlı Paraşüt verisi daha eksiksiz: bu müşteri için kayıtlı alışların yerine onu kullan
+    for (let i = cand.length - 1; i >= 0; i--) if (cand[i].cust === opts.customerId) cand.splice(i, 1);
+    liveList.forEach((d: any, i: number) =>
       cand.push({ b: { id: `live-${i}`, category: d.category, net_total_try: n(d.net_try), issue_date: d.issue_date }, cust: opts.customerId }));
   }
   // Bu alımlarla kesilen satış faturaları (İş Kolları & Bayi İşleri eşleştirmesi) — kategori bulunamazsa satış faturasının kategorisi kullanılır
@@ -223,11 +228,15 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
   const salesById = new Map<string, any>(docs.map((d: any) => [d.id, d]));
   const custName = new Map<string, string>(custs.map((c: any) => [c.id, c.name]));
   const unmatchedSupply: WSData['unmatchedSupply'] = {};
+  const supplyCats: WSData['supplyCats'] = {};
   cand.forEach(({ b, cust }: any) => {
     const cat = String(b.category || '').trim();
     const linked = (linkMap.get(b.id) || []).map(id => salesById.get(id)).filter(Boolean);
     const off = supplyOff(cat) || (linked.length ? sellByLow.get(low(docOff.get(linked[0].id) || '')) || null : null);
     const amt = n(b.net_total_try); const d = day(b.issue_date);
+    const sc = ((supplyCats[cust] ||= []).find(x => x.cat === (cat || 'Kategorisiz'))) || (supplyCats[cust].push({ cat: cat || 'Kategorisiz', raw: cat, count: 0, buy12: 0, buyAll: 0, off: null, mapped: false }), supplyCats[cust][supplyCats[cust].length - 1]);
+    sc.count++; sc.buyAll += amt; if (d >= yearAgo) sc.buy12 += amt; if (off) sc.off = off;
+    sc.mapped = !!(cat && (mapOf.has(cat) || [...mapOf.keys()].some(k => low(k) === low(cat))));
     if (!off) {
       const u = (unmatchedSupply[cust] ||= { buy12: 0, count: 0, cats: [] });
       u.count++; if (d >= yearAgo) u.buy12 += amt; const cn = cat || 'Kategorisiz'; if (!u.cats.includes(cn) && u.cats.length < 6) u.cats.push(cn);
@@ -294,7 +303,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
   buys.forEach((b: any) => { const k = String(b.contact_name || '(firma adı boş)'); const x = pm.get(k) || { name: k, count: 0, tax: false, contact: false, linked: false }; x.count++; if (b.tax_number) x.tax = true; if (b.contact_parasut_id) x.contact = true; if (b.customer_id) x.linked = true; pm.set(k, x); });
   const buyParties = [...pm.values()].sort((a, b) => b.count - a.count).slice(0, 20);
   const liveBuyCount = (opts.liveBuys || []).filter((d: any) => d.kind === 'purchase_bill').length;
-  return { ready, offerings, allOfferings, customers, cells, marks, stats, unmatchedSupply, buyScanned: buys.length, buyParties, liveBuyCount, suggestions, stateOf };
+  return { ready, offerings, allOfferings, customers, cells, marks, stats, unmatchedSupply, supplyCats, buyScanned: buys.length, buyParties, liveBuyCount, suggestions, stateOf };
 }
 
 /** Müşteri × kategori değerlendirmesini kaydeder (null = işareti kaldır) */

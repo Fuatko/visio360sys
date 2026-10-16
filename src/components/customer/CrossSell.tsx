@@ -6,11 +6,18 @@ import { Card, Button } from '@/components/ui';
 import { loadWhitespace, UNCATEGORIZED, type WSData } from '@/lib/whitespace';
 import { MarkEditor, Legend, STATE, tl } from '@/components/whitespace/WhitespaceUI';
 import { Grid3x3, ExternalLink } from 'lucide-react';
+import { parasutCall } from '@/lib/parasut-client';
 
 /** Müşteri kartı: bu müşterinin kategori bazında alım durumu ve çapraz satış önerileri */
 export default function CrossSell({ supabase, customer, liveDocs = [] }: { supabase: any; customer: any; liveDocs?: any[] }) {
   const [d, setD] = useState<WSData | null>(null);
   const [edit, setEdit] = useState<string | null>(null);
+  const [mapping, setMapping] = useState<string | null>(null);
+  const mapCat = async (cat: string, line: string) => {
+    setMapping(cat);
+    try { await parasutCall('/api/parasut/business-lines', 'POST', { action: 'map', purchase_category: cat, business_line: line || null }); await load(); }
+    catch (e: any) { alert(e.message); } finally { setMapping(null); }
+  };
   const load = useCallback(async () => { setD(await loadWhitespace(supabase, { customerId: customer.id, liveBuys: liveDocs })); }, [customer.id, liveDocs.length]);
   useEffect(() => { load(); }, [load]);
 
@@ -41,7 +48,7 @@ export default function CrossSell({ supabase, customer, liveDocs = [] }: { supab
             <div className="min-w-0 flex-1">
               <p className="font-medium">{r.o}</p>
               <p className="truncate text-xs text-slate-500">
-                {r.st === 'buying' ? (r.x && r.x.rev12 > 0 ? `${r.x.count} belge · son alım ${r.x.last ? new Date(r.x.last).toLocaleDateString('tr-TR') : '-'}${r.x.products.length ? ' · ' + r.x.products.slice(0, 4).join(', ') : ''}` : `Elle işaretlendi${r.m?.note ? ' · ' + r.m.note : ''}`)
+                {r.st === 'buying' ? (r.x && r.x.rev12 > 0 ? `${r.x.count} belge · son alım ${r.x.last ? new Date(r.x.last).toLocaleDateString('tr-TR') : '-'}${r.x.products.length ? ' · ' + r.x.products.slice(0, 4).join(', ') : ''}` : `Elle işaretlendi${r.m?.note ? ' · ' + r.m.note : ''}`) + (r.x?.supply?.buyAll ? ` · ayrıca bu kategoride bu firmadan alış: ${tl(r.x.supply.buy12)} (son 12 ay)` : '')
                   : r.st === 'supplier' ? `Bu kategoride bu firmadan alıyorsunuz · ${r.x!.supply!.count} alış faturası${r.x!.supply!.resale12 > 0 ? ` · bu alımlarla ${tl(r.x!.supply!.resale12)} satış${r.x!.supply!.resaleTo.length ? ` (${r.x!.supply!.resaleTo.join(', ')})` : ''}` : ''}`
                   : r.st === 'remapped' ? `Bu müşteride ${r.m?.remap_to} olarak sayılıyor`
                   : r.sg ? r.sg.reason
@@ -55,12 +62,34 @@ export default function CrossSell({ supabase, customer, liveDocs = [] }: { supab
           </button>
         ))}</div>
       )}
-      {d.unmatchedSupply[customer.id] && (() => { const u = d.unmatchedSupply[customer.id]; return (
-        <div className="border-t bg-amber-50 px-4 py-3 text-xs text-amber-900">
-          Bu firmadan {u.count} alış faturanız var{u.buy12 > 0 ? ` (son 12 ay ${tl(u.buy12)})` : ''} ama satış kategorilerinizle eşleşmedi. Faturalardaki gider kategorileri: <b>{u.cats.join(', ')}</b>.
-          {' '}<Link href="/business-lines" className="font-medium underline">İş Kolları & Bayi İşleri</Link> ekranında bu kategoriyi ilgili iş koluna (ör. Teknik Servis) eşleyin; satır "Ana firma (alış)" olarak görünür.
-        </div>); })()}
-      {!d.unmatchedSupply[customer.id] && !rows.some(r => r.st === 'supplier') && (customer.relation_roles || []).some((r: string) => r === 'principal' || r === 'supplier') && (
+      {(d.supplyCats[customer.id] || []).length > 0 && (
+        <div className="border-t">
+          <div className="bg-stone-50 px-4 py-2.5">
+            <p className="text-sm font-semibold text-stone-800">Bu firmadan alışlarınız (Paraşüt alış faturaları)</p>
+            <p className="text-xs text-stone-600">Ana firma / tedarikçi tarafı. Her gider kategorisinin hangi iş kolunuza ait olduğunu seçin; o iş kolu bu firmada "Ana firma (alış)" olarak görünür, satış fırsatı olarak önerilmez. Seçim tüm firmalarda bu gider kategorisi için geçerlidir (İş Kolları ekranıyla ortak).</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead><tr className="border-b text-left text-xs text-slate-500"><th className="px-4 py-1.5 font-medium">Paraşüt gider kategorisi</th><th className="px-2 py-1.5 text-right font-medium">Fatura</th><th className="px-2 py-1.5 text-right font-medium">Son 12 ay</th><th className="px-2 py-1.5 text-right font-medium">Toplam</th><th className="px-4 py-1.5 font-medium">İş kolu</th></tr></thead>
+            <tbody>{d.supplyCats[customer.id].sort((x, y) => y.buyAll - x.buyAll).map(sc => (
+              <tr key={sc.cat} className="border-b last:border-0">
+                <td className="px-4 py-2 font-medium">{sc.cat}</td>
+                <td className="px-2 py-2 text-right">{sc.count}</td>
+                <td className="px-2 py-2 text-right">{tl(sc.buy12)}</td>
+                <td className="px-2 py-2 text-right text-slate-500">{tl(sc.buyAll)}</td>
+                <td className="px-4 py-1.5">
+                  {sc.raw ? (
+                    <select value={sc.off || ''} disabled={mapping === sc.cat} onChange={e => mapCat(sc.raw, e.target.value)} className={`h-8 rounded border px-2 text-xs ${sc.off ? 'border-stone-300' : 'border-amber-400 bg-amber-50'}`}>
+                      <option value="">{sc.off ? 'Eşlemeyi kaldır' : 'Seçin (eşleşmedi)'}</option>
+                      {d.offerings.filter(o => o !== UNCATEGORIZED).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : <span className="text-xs text-amber-700">Paraşüt'te kategori verilmemiş</span>}
+                  {sc.off && !sc.mapped && <span className="ml-2 text-[11px] text-slate-400">ad benzerliğinden</span>}
+                </td>
+              </tr>))}</tbody>
+          </table>
+        </div>
+      )}
+      {!(d.supplyCats[customer.id] || []).length && (customer.relation_roles || []).some((r: string) => r === 'principal' || r === 'supplier') && (
         <div className="border-t bg-slate-50 px-4 py-3 text-xs text-slate-600">
           Bu firma ana firma / tedarikçi olarak işaretli ama okunan {d.buyScanned} alış faturası içinde bu firmaya ait fatura bulunamadı.
           {d.buyScanned === 0 ? ' Paraşüt\'ten hiç alış faturası gelmemiş görünüyor: Entegrasyonlar → Paraşüt → Senkronize et.' : ' Faturalardaki firma adı veya vergi numarası bu kartla eşleşmiyor olabilir.'}
