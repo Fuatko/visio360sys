@@ -55,6 +55,11 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
           </button>
         ))}</div>
       )}
+      {d.unmatchedSupply[customer.id] && (() => { const u = d.unmatchedSupply[customer.id]; return (
+        <div className="border-t bg-amber-50 px-4 py-3 text-xs text-amber-900">
+          Bu firmadan {u.count} alış faturanız var{u.buy12 > 0 ? ` (son 12 ay ${tl(u.buy12)})` : ''} ama satış kategorilerinizle eşleşmedi. Faturalardaki gider kategorileri: <b>{u.cats.join(', ')}</b>.
+          {' '}<Link href="/business-lines" className="font-medium underline">İş Kolları & Bayi İşleri</Link> ekranında bu kategoriyi ilgili iş koluna (ör. Teknik Servis) eşleyin; satır "Ana firma (alış)" olarak görünür.
+        </div>); })()}
       {edit && <MarkEditor supabase={supabase} data={d} customer={customer} offering={edit} onClose={() => setEdit(null)} onSaved={load} />}
     </Card>
   );
