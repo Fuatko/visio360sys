@@ -46,7 +46,7 @@ export type WSData = {
 const emptyCell = (): WSCell => ({ rev12: 0, revAll: 0, last: null, count: 0, byYear: {}, products: [], quoted: null });
 const median = (a: number[]) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
-export async function loadWhitespace(supabase: any, opts: { customerId?: string } = {}): Promise<WSData> {
+export async function loadWhitespace(supabase: any, opts: { customerId?: string; liveBuys?: any[] } = {}): Promise<WSData> {
   const yearAgo = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
   const [custs, docs, prods, orders, quotes, marksRes, offRes] = await Promise.all([
     safe(supabase.from('customers').select('id, name, status, segment, sector, assigned_to, customer_type, merged_into, phone, is_key_account').order('name').limit(10000)),
@@ -205,6 +205,11 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     || (b.contact_parasut_id && byContact.get(String(b.contact_parasut_id)))
     || byFullName.get(key(b.contact_name).join(' ')) || (key(b.contact_name)[0] && byWord.get(key(b.contact_name)[0])) || null;
   const cand = buys.map((b: any) => ({ b, cust: custOfBuy(b) })).filter((x: any) => x.cust && n(x.b.net_total_try) > 0);
+  // Kayıtlı alışlarda bu müşteri bulunamadıysa müşteri kartındaki canlı Paraşüt verisini kullan (Cari durum kutusu)
+  if (opts.customerId && opts.liveBuys?.length && !cand.some((x: any) => x.cust === opts.customerId)) {
+    opts.liveBuys.filter((d: any) => d.kind === 'purchase_bill' && n(d.net_try) > 0).forEach((d: any, i: number) =>
+      cand.push({ b: { id: `live-${i}`, category: d.category, net_total_try: n(d.net_try), issue_date: d.issue_date }, cust: opts.customerId }));
+  }
   // Bu alımlarla kesilen satış faturaları (İş Kolları & Bayi İşleri eşleştirmesi) — kategori bulunamazsa satış faturasının kategorisi kullanılır
   const linkMap = new Map<string, string[]>();
   const candIds = cand.map((x: any) => x.b.id);

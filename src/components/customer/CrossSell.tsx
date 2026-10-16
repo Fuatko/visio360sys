@@ -8,10 +8,10 @@ import { MarkEditor, Legend, STATE, tl } from '@/components/whitespace/Whitespac
 import { Grid3x3, ExternalLink } from 'lucide-react';
 
 /** Müşteri kartı: bu müşterinin kategori bazında alım durumu ve çapraz satış önerileri */
-export default function CrossSell({ supabase, customer }: { supabase: any; customer: any }) {
+export default function CrossSell({ supabase, customer, liveDocs = [] }: { supabase: any; customer: any; liveDocs?: any[] }) {
   const [d, setD] = useState<WSData | null>(null);
   const [edit, setEdit] = useState<string | null>(null);
-  const load = useCallback(async () => { setD(await loadWhitespace(supabase, { customerId: customer.id })); }, [customer.id]);
+  const load = useCallback(async () => { setD(await loadWhitespace(supabase, { customerId: customer.id, liveBuys: liveDocs })); }, [customer.id, liveDocs.length]);
   useEffect(() => { load(); }, [load]);
 
   if (!d) return <Card className="p-6 text-sm text-slate-500">Yükleniyor…</Card>;

@@ -214,7 +214,7 @@ export default function CustomerCardPage() {
         {tab === 'contacts' && <Contacts supabase={supabase} customerId={c.id} contacts={rel.contacts} consents={rel.consents} onChanged={load} />}
         {tab === 'addresses' && <Addresses supabase={supabase} customerId={c.id} rows={rel.addresses} onChanged={load} />}
         {tab === 'base' && <InstalledBase supabase={supabase} customerId={c.id} rows={rel.base} onChanged={load} />}
-        {tab === 'crosssell' && <CrossSell supabase={supabase} customer={c} />}
+        {tab === 'crosssell' && <CrossSell supabase={supabase} customer={c} liveDocs={pDocs} />}
         {tab === 'plan' && <AccountPlan supabase={supabase} customer={c} />}
       </div>
     </div>

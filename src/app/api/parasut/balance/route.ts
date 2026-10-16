@@ -46,6 +46,12 @@ export async function GET(request: Request) {
     } catch (e: any) { contactErr = e.message; }
   }
   const cids = new Set(contacts.map(c => c.id));
+  // Bulunan Paraşüt carilerine ait, henüz bir karta bağlanmamış belgeleri bu müşteriye bağla
+  // (ör. ERACOM'un ayrı açılmış tedarikçi carisinden gelen alış faturaları) — çapraz satış, iş kolları ve raporlar bunu kullanır
+  if (cids.size) {
+    try { await admin.from('parasut_documents').update({ customer_id: id }).eq('organization_id', who.orgId).in('contact_parasut_id', [...cids]).is('customer_id', null); }
+    catch { /* bağlama yapılamazsa ekran yine canlı veriyle çalışır */ }
+  }
 
   // Bu carinin Paraşüt'teki TÜM açık faturaları (tarih sınırı yok), canlı
   const live: any[] = []; const liveErr: string[] = []; const recent: any[] = []; const raw: Record<string, number> = {}; const all: any[] = [];
