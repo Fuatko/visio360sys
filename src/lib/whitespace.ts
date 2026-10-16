@@ -39,6 +39,8 @@ export type WSData = {
   stats: Record<string, { buyers: number; avg: number; penetration: number }>;
   unmatchedSupply: Record<string, { buy12: number; count: number; cats: string[] }>;  // satış kategorisine eşleşmeyen alışlar
   buyScanned: number;                    // okunan alış faturası sayısı (teşhis için)
+  buyParties: { name: string; count: number; tax: boolean; contact: boolean; linked: boolean }[];   // alış faturalarındaki firmalar (teşhis)
+  liveBuyCount: number;                  // müşteri kartındaki canlı Paraşüt verisindeki alış belgesi sayısı
   suggestions: WSSuggestion[];
   stateOf: (customerId: string, offering: string) => WSState;
 };
@@ -288,7 +290,11 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string;
   });
   suggestions.sort((a, b) => b.score - a.score);
 
-  return { ready, offerings, allOfferings, customers, cells, marks, stats, unmatchedSupply, buyScanned: buys.length, suggestions, stateOf };
+  const pm = new Map<string, any>();
+  buys.forEach((b: any) => { const k = String(b.contact_name || '(firma adı boş)'); const x = pm.get(k) || { name: k, count: 0, tax: false, contact: false, linked: false }; x.count++; if (b.tax_number) x.tax = true; if (b.contact_parasut_id) x.contact = true; if (b.customer_id) x.linked = true; pm.set(k, x); });
+  const buyParties = [...pm.values()].sort((a, b) => b.count - a.count).slice(0, 20);
+  const liveBuyCount = (opts.liveBuys || []).filter((d: any) => d.kind === 'purchase_bill').length;
+  return { ready, offerings, allOfferings, customers, cells, marks, stats, unmatchedSupply, buyScanned: buys.length, buyParties, liveBuyCount, suggestions, stateOf };
 }
 
 /** Müşteri × kategori değerlendirmesini kaydeder (null = işareti kaldır) */

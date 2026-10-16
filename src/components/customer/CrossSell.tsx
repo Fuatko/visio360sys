@@ -63,7 +63,14 @@ export default function CrossSell({ supabase, customer, liveDocs = [] }: { supab
       {!d.unmatchedSupply[customer.id] && !rows.some(r => r.st === 'supplier') && (customer.relation_roles || []).some((r: string) => r === 'principal' || r === 'supplier') && (
         <div className="border-t bg-slate-50 px-4 py-3 text-xs text-slate-600">
           Bu firma ana firma / tedarikçi olarak işaretli ama okunan {d.buyScanned} alış faturası içinde bu firmaya ait fatura bulunamadı.
-          {d.buyScanned === 0 ? ' Paraşüt\'ten hiç alış faturası gelmemiş görünüyor: Entegrasyonlar → Paraşüt → Senkronize et.' : ' Faturalardaki firma adı veya vergi numarası bu kartla eşleşmiyor olabilir; İş Kolları & Bayi İşleri → Ana firmalar listesinde firmanın nasıl göründüğünü kontrol edin.'}
+          {d.buyScanned === 0 ? ' Paraşüt\'ten hiç alış faturası gelmemiş görünüyor: Entegrasyonlar → Paraşüt → Senkronize et.' : ' Faturalardaki firma adı veya vergi numarası bu kartla eşleşmiyor olabilir.'}
+          <details className="mt-2">
+            <summary className="cursor-pointer font-medium text-slate-700">Teşhis ayrıntısı (ekran görüntüsü için açın)</summary>
+            <p className="mt-1">Kart: <b>{customer.name}</b> · VKN {customer.tax_number || 'yok'} · Cari durum kutusundaki canlı Paraşüt alış belgesi: <b>{d.liveBuyCount}</b>{liveDocs.length === 0 ? ' (Cari durum kutusu yüklenmemiş — önce Özet sekmesini açın)' : ''}</p>
+            <p className="mt-1">Kayıtlı alış faturalarındaki firmalar:</p>
+            <ul className="mt-0.5 grid gap-x-6 sm:grid-cols-2">{d.buyParties.map(p => (
+              <li key={p.name}>{p.name} — {p.count} fatura{p.tax ? ' · VKN var' : ' · VKN yok'}{p.contact ? '' : ' · cari no yok'}{p.linked ? ' · karta bağlı' : ''}</li>))}</ul>
+          </details>
         </div>
       )}
       {edit && <MarkEditor supabase={supabase} data={d} customer={customer} offering={edit} onClose={() => setEdit(null)} onSaved={load} />}
