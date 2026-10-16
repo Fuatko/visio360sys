@@ -51,7 +51,7 @@ import {
   Coffee,
   Plug,
   Scale,
-  BellRing, Grid3x3,
+  BellRing, Grid3x3, ClipboardList,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -70,6 +70,7 @@ const mainItems = [
   { href: '/briefs', label: 'Görüşme Hazırlık (AI)', icon: Sparkles },
   { href: '/customer-success', label: 'Müşteri Başarısı', icon: HeartPulse },
   { href: '/whitespace', label: 'Beyaz Alan & Çapraz Satış', icon: Grid3x3 },
+  { href: '/account-plans', label: 'Yıllık Hesap Planları', icon: ClipboardList },
   { href: '/crm', label: 'CRM Aktiviteleri', icon: Heart },
   { href: '/visits', label: 'Saha Ziyaretleri', icon: MapPinned },
 ];

@@ -17,6 +17,7 @@ export type WSCell = {
   revAll: number;           // tüm zamanlar
   last: string | null;      // son alım tarihi
   count: number;            // fatura / sipariş sayısı
+  byYear: Record<number, number>;  // takvim yılı bazında KDV hariç
   products: string[];       // alınan ürün / hizmet adları
   quoted: { id: string; no: string; date: string } | null;  // son 12 ayda verilen, siparişe dönmemiş teklif
 };
@@ -37,7 +38,7 @@ export type WSData = {
   stateOf: (customerId: string, offering: string) => WSState;
 };
 
-const emptyCell = (): WSCell => ({ rev12: 0, revAll: 0, last: null, count: 0, products: [], quoted: null });
+const emptyCell = (): WSCell => ({ rev12: 0, revAll: 0, last: null, count: 0, byYear: {}, products: [], quoted: null });
 const median = (a: number[]) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 export async function loadWhitespace(supabase: any, opts: { customerId?: string } = {}): Promise<WSData> {
@@ -63,6 +64,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const addSale = (cust: string, off: string, date: string, amount: number, product?: string | null) => {
     const x = cell(cust, off);
     x.revAll += amount; if (date >= yearAgo) x.rev12 += amount;
+    const y = Number(date.slice(0, 4)); if (y) x.byYear[y] = (x.byYear[y] || 0) + amount;
     x.count += 1; if (!x.last || date > x.last) x.last = date;
     if (product && !x.products.includes(product) && x.products.length < 12) x.products.push(product);
   };

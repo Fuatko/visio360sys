@@ -5,6 +5,7 @@
 
 import { loadParasutSales, mergeParasut } from '@/lib/parasut-facts';
 import { loadWhitespace } from '@/lib/whitespace';
+import { progress, yearRevenue } from '@/lib/account-plans';
 
 const n = (v: any) => Number(v) || 0;
 const safe = async (q: any) => { try { const r = await q; return r.error ? [] : r.data || []; } catch { return []; } };
@@ -18,7 +19,7 @@ const CLOSED_OPP = ['Kazanıldı', 'Kaybedildi', 'won', 'lost', 'Won', 'Lost'];
 
 export type ReminderKind =
   | 'overdue' | 'due_soon' | 'quote_hot' | 'quote_revision' | 'quote_unopened' | 'quote_expiring'
-  | 'next_step' | 'opp_close' | 'repeat' | 'silent' | 'renewal' | 'crosssell';
+  | 'next_step' | 'opp_close' | 'repeat' | 'silent' | 'renewal' | 'crosssell' | 'plan_action' | 'plan_behind';
 
 export type Reminder = {
   key: string; kind: ReminderKind; priority: 1 | 2 | 3; due: string;
@@ -29,7 +30,7 @@ export type Reminder = {
 export const KIND_LABEL: Record<ReminderKind, string> = {
   overdue: 'Vadesi geçen alacak', due_soon: 'Vadesi yaklaşan alacak', quote_hot: 'Sıcak teklif', quote_revision: 'Revizyon talebi',
   quote_unopened: 'Açılmayan teklif', quote_expiring: 'Süresi dolan teklif', next_step: 'Sonraki adım', opp_close: 'Fırsat kapanışı',
-  repeat: 'Tekrar alım zamanı', silent: 'Temassız müşteri', renewal: 'Yenileme', crosssell: 'Çapraz satış',
+  repeat: 'Tekrar alım zamanı', silent: 'Temassız müşteri', renewal: 'Yenileme', crosssell: 'Çapraz satış', plan_action: 'Hesap planı aksiyonu', plan_behind: 'Plan hedefi',
 };
 
 export async function loadReminders(supabase: any, opts: { customerId?: string; crossSell?: boolean } = {}) {
@@ -168,10 +169,33 @@ export async function loadReminders(supabase: any, opts: { customerId?: string; 
       title: `${b.product_name}${b.brand ? ` (${b.brand})` : ''} bakım/lisans bitişi ${trDate(end)}`, detail: b.is_ours ? 'Sizin kurulumunuz: yenileme teklifi hazırlayın.' : 'Rakip ürün: değişim fırsatı olabilir.', href: `/customers/${b.customer_id}` });
   });
 
-  // 8) Çapraz satış: müşteri başına en güçlü öneri (yalnızca liste ekranında)
+  // 8) Yıllık hesap planı aksiyonları (tarihi gelen / geçen)
+  const year = new Date().getFullYear();
+  const plans = await safe(byC(supabase.from('account_plans').select('id, customer_id, year, revenue_target, status, owner_id')).eq('year', year));
+  const activePlans = plans.filter((p: any) => p.status !== 'closed');
+  if (activePlans.length) {
+    const pacts = await safe(supabase.from('account_plan_actions').select('*').in('plan_id', activePlans.map((p: any) => p.id)).eq('status', 'open').not('due_date', 'is', null).lte('due_date', addDays(today, 3)));
+    pacts.forEach((a: any) => {
+      const pl = activePlans.find((p: any) => p.id === a.plan_id); if (!pl) return;
+      const d = day(a.due_date);
+      push({ key: `plan_action:${a.id}:${d}`, kind: 'plan_action', priority: d < today ? 1 : 2, due: d, customer_id: pl.customer_id,
+        title: a.title, detail: `${year} hesap planı · ${a.quarter}. çeyrek${a.offering ? ` · ${a.offering}` : ''}${d < today ? ` · ${diffDays(today, d)} gün gecikti` : ''}. Tamamlandıysa plan ekranında işaretleyin.`, href: `/customers/${pl.customer_id}?tab=plan` });
+    });
+  }
+
+  // 9) Çapraz satış + plan hedefi gerisinde (beyaz alan analizi gerektirir: liste ekranı ve müşteri kartı)
   if (opts.crossSell || cid) {
     try {
       const ws = await loadWhitespace(supabase, cid ? { customerId: cid } : {});
+      const month = today.slice(0, 7);
+      activePlans.forEach((pl: any) => {
+        if (!Number(pl.revenue_target)) return;
+        const actual = yearRevenue(ws, pl.customer_id, year); const pr = progress(pl.revenue_target, actual, year);
+        if (pr.state !== 'behind' || pr.expected < 0.15) return;
+        push({ key: `plan_behind:${pl.id}:${month}`, kind: 'plan_behind', priority: 2, due: today, customer_id: pl.customer_id, amount: pr.gap,
+          title: `Plan hedefinin gerisinde: %${Math.round((pr.pct || 0) * 100)} (beklenen %${Math.round(pr.expected * 100)})`,
+          detail: `Gerçekleşen ${money(actual)} / hedef ${money(Number(pl.revenue_target))}. Yıl sonu tahmini ${money(pr.projection)}. Plan aksiyonlarını ve açık fırsatları gözden geçirin.`, href: `/customers/${pl.customer_id}?tab=plan` });
+      });
       const seen = new Set<string>();
       ws.suggestions.filter(s => s.state !== 'opportunity').forEach(s => {
         if (seen.has(s.customer_id)) return; seen.add(s.customer_id);

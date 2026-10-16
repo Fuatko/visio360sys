@@ -16,10 +16,11 @@ import ParasutBalance from '@/components/customer/ParasutBalance';
 import RelationRoles from '@/components/customer/RelationRoles';
 import { Addresses, AccountTeam, InstalledBase } from '@/components/customer/Related';
 import CrossSell from '@/components/customer/CrossSell';
+import AccountPlan from '@/components/customer/AccountPlan';
 import CustomerReminders from '@/components/reminders/CustomerReminders';
 import { ArrowLeft, Star, ShieldAlert, Building2, Sparkles, FileSignature, Target, AlertTriangle, GitMerge, CalendarClock, Network } from 'lucide-react';
 
-type Tab = 'overview' | 'info' | 'contacts' | 'addresses' | 'base' | 'crosssell';
+type Tab = 'overview' | 'info' | 'contacts' | 'addresses' | 'base' | 'crosssell' | 'plan';
 const tl = (v: any) => `₺${formatMoney(Math.round(Number(v) || 0))}`;
 const n = (v: any) => Number(v) || 0;
 const safe = async (q: any) => { const r = await q; return r.error ? [] : r.data || []; };
@@ -29,6 +30,7 @@ export default function CustomerCardPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<Tab>('overview');
+  useEffect(() => { const t = new URLSearchParams(window.location.search).get('tab'); if (t) setTab(t as Tab); }, []);
   const [pDocs, setPDocs] = useState<any[]>([]);
   const [c, setC] = useState<any>(undefined);
   const [all, setAll] = useState<any[]>([]);
@@ -123,7 +125,7 @@ export default function CustomerCardPage() {
   };
 
   const TABS: [Tab, string, number?][] = [['overview', 'Özet & zaman çizelgesi'], ['info', 'Firma bilgileri'], ['contacts', 'Kişiler', rel.contacts.filter((x: any) => x.is_active !== false).length],
-    ['addresses', 'Adresler', rel.addresses.length], ['base', 'Kurulu baz', rel.base.length], ['crosssell', 'Çapraz satış']];
+    ['addresses', 'Adresler', rel.addresses.length], ['base', 'Kurulu baz', rel.base.length], ['crosssell', 'Çapraz satış'], ['plan', 'Yıllık plan']];
 
   return (
     <div>
@@ -213,6 +215,7 @@ export default function CustomerCardPage() {
         {tab === 'addresses' && <Addresses supabase={supabase} customerId={c.id} rows={rel.addresses} onChanged={load} />}
         {tab === 'base' && <InstalledBase supabase={supabase} customerId={c.id} rows={rel.base} onChanged={load} />}
         {tab === 'crosssell' && <CrossSell supabase={supabase} customer={c} />}
+        {tab === 'plan' && <AccountPlan supabase={supabase} customer={c} />}
       </div>
     </div>
   );
