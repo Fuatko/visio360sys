@@ -21,7 +21,7 @@ export type WSCell = {
   products: string[];       // alınan ürün / hizmet adları
   quoted: { id: string; no: string; date: string } | null;  // son 12 ayda verilen, siparişe dönmemiş teklif
 };
-export type WSState = 'buying' | 'lapsed' | 'quoted' | 'opportunity' | 'competitor' | 'no_need' | 'not_now' | 'suggested' | 'empty';
+export type WSState = 'buying' | 'remapped' | 'lapsed' | 'quoted' | 'opportunity' | 'competitor' | 'no_need' | 'not_now' | 'suggested' | 'empty';
 export type WSSuggestion = {
   customer_id: string; customer: string; assigned_to: string | null; offering: string;
   est: number; score: number; reason: string; state: WSState;
@@ -58,9 +58,14 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const offSet: Record<string, any> = {}; offRes.forEach((o: any) => { offSet[o.name] = o; });
   const canon = (raw: any) => { let k = String(raw || '').trim() || UNCATEGORIZED; for (let i = 0; i < 3 && offSet[k]?.merge_into; i++) k = offSet[k].merge_into; return k; };
 
+  // Müşteri × kategori değerlendirmeleri; "remap": bu müşterideki X kategorisini Y olarak say (ör. SJ Lisesi HİZMET → Danışmanlık)
+  const marks: Record<string, Record<string, any>> = {};
+  (ready ? marksRes.data || [] : []).forEach((m: any) => { (marks[m.customer_id] ||= {})[m.offering] = m; });
+  const remapOf = (cust: string, off: string) => { const m = marks[cust]?.[off]; return m?.status === 'remap' && m.remap_to ? canon(m.remap_to) : off; };
+
   const prodById = new Map<string, any>(prods.map((p: any) => [p.id, p]));
   const cells: Record<string, Record<string, WSCell>> = {};
-  const cell = (c: string, o: string) => ((cells[c] ||= {})[o] ||= emptyCell());
+  const cell = (c: string, o: string) => ((cells[c] ||= {})[remapOf(c, o)] ||= emptyCell());
   const addSale = (cust: string, off: string, date: string, amount: number, product?: string | null) => {
     const x = cell(cust, off);
     x.revAll += amount; if (date >= yearAgo) x.rev12 += amount;
@@ -144,6 +149,10 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const offNames = new Set<string>();
   Object.values(cells).forEach(r => Object.keys(r).forEach(o => offNames.add(o)));
   prods.forEach((p: any) => { if (p.category) offNames.add(canon(p.category)); });
+  Object.values(marks).forEach(r => Object.values(r).forEach((m: any) => {
+    if (m.status === 'buying' || m.status === 'opportunity') offNames.add(canon(m.offering));
+    if (m.status === 'remap') { offNames.add(m.offering); if (m.remap_to) offNames.add(canon(m.remap_to)); }
+  }));
   const allOfferings = [...offNames, ...offRes.filter((o: any) => o.merge_into || o.hidden).map((o: any) => o.name)]
     .filter((v, i, a) => a.indexOf(v) === i)
     .map(name => {
@@ -152,9 +161,6 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     })
     .sort((a, b) => b.rev12 - a.rev12 || a.name.localeCompare(b.name, 'tr'));
   const offerings = allOfferings.filter(o => !o.hidden && !o.merge_into).map(o => o.name);
-
-  const marks: Record<string, Record<string, any>> = {};
-  (ready ? marksRes.data || [] : []).forEach((m: any) => { (marks[m.customer_id] ||= {})[m.offering] = m; });
 
   // Kategori istatistikleri
   const stats: WSData['stats'] = {};
@@ -166,6 +172,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const stateOf = (cid: string, o: string): WSState => {
     const x = cells[cid]?.[o]; const m = marks[cid]?.[o];
     if (x && x.rev12 > 0) return 'buying';
+    if (m?.status === 'remap') return 'remapped';
     if (m?.status === 'buying') return 'buying';
     if (m && m.status !== 'opportunity') return m.status;
     if (m?.status === 'opportunity') return 'opportunity';
@@ -181,7 +188,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     offerings.forEach(o => {
       if (o === UNCATEGORIZED) return;
       const st = stateOf(c.id, o);
-      if (['buying', 'competitor', 'no_need', 'not_now'].includes(st)) return;
+      if (['buying', 'remapped', 'competitor', 'no_need', 'not_now'].includes(st)) return;
       const x = cells[c.id]?.[o]; const m = marks[c.id]?.[o]; const s = stats[o];
       const peers = c.sector ? customers.filter((p: any) => p.id !== c.id && p.sector === c.sector) : [];
       const usePeers = peers.length >= 2;
@@ -207,7 +214,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
 }
 
 /** Müşteri × kategori değerlendirmesini kaydeder (null = işareti kaldır) */
-export async function saveMark(supabase: any, customerId: string, offering: string, patch: { status: string; competitor?: string | null; est_value?: number | null; note?: string | null; opportunity_id?: string | null } | null) {
+export async function saveMark(supabase: any, customerId: string, offering: string, patch: { status: string; remap_to?: string | null; competitor?: string | null; est_value?: number | null; note?: string | null; opportunity_id?: string | null } | null) {
   if (!patch) {
     const { error } = await supabase.from('whitespace_marks').delete().eq('customer_id', customerId).eq('offering', offering);
     if (error) throw new Error(error.message); return;
@@ -215,7 +222,7 @@ export async function saveMark(supabase: any, customerId: string, offering: stri
   const { data: ex } = await supabase.from('whitespace_marks').select('id').eq('customer_id', customerId).eq('offering', offering).maybeSingle();
   const row = { customer_id: customerId, offering, ...patch, updated_at: new Date().toISOString() };
   const { error } = ex ? await supabase.from('whitespace_marks').update(row).eq('id', ex.id) : await supabase.from('whitespace_marks').insert([row]);
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(/remap_to|status_check|check constraint/i.test(error.message) ? 'Önce kategori-duzelt.sql dosyasını Supabase\'de çalıştırın.' : error.message);
 }
 
 /** Çapraz satış önerisinden fırsat açar ve işaretler */

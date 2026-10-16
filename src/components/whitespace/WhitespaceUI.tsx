@@ -11,6 +11,7 @@ export const tl = (v: any) => `₺${formatMoney(Math.round(Number(v) || 0))}`;
 export const short = (v: number) => (v >= 1e6 ? `₺${(v / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: 1 })} Mn` : v >= 1e3 ? `₺${Math.round(v / 1e3).toLocaleString('tr-TR')} B` : tl(v));
 
 export const STATE: Record<WSState, { label: string; cls: string; dot: string }> = {
+  remapped:    { label: 'Taşındı',         cls: 'bg-slate-50 text-slate-500 border-dashed border-slate-300', dot: 'bg-slate-300' },
   buying:      { label: 'Alıyor',          cls: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
   lapsed:      { label: 'Uyuyan',          cls: 'bg-amber-50 text-amber-800 border-amber-200',       dot: 'bg-amber-500' },
   quoted:      { label: 'Teklif verildi',  cls: 'bg-sky-50 text-sky-800 border-sky-200',             dot: 'bg-sky-500' },
@@ -47,7 +48,16 @@ export function MarkEditor({ supabase, data, customer, offering, onClose, onSave
   const [note, setNote] = useState<string>(m?.note || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [remapTo, setRemapTo] = useState<string>('');
+  const [remapNew, setRemapNew] = useState<string>('');
 
+  const remap = async (to: string | null) => {
+    setBusy(true); setErr(null);
+    try {
+      await saveMark(supabase, customer.id, offering, to ? { status: 'remap', remap_to: to, note: `${offering} → ${to}` } : null);
+      onSaved(); onClose();
+    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+  };
   const save = async () => {
     setBusy(true); setErr(null);
     try {
@@ -82,8 +92,29 @@ export function MarkEditor({ supabase, data, customer, offering, onClose, onSave
           {m?.opportunity_id && <p className="mt-1 text-xs">Bu alan için fırsat açıldı · <Link href="/opportunities" className="underline">Fırsatlar</Link></p>}
         </div>
         {!data.ready && <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">Değerlendirmeleri kaydetmek için <b>capraz-satis-hatirlatma.sql</b> dosyasını Supabase'de çalıştırın. Fırsat oluşturma şimdi de çalışır.</p>}
+        {st === 'remapped' && (
+          <div className="rounded-lg border border-dashed p-3 text-xs text-slate-600">
+            Bu müşterinin <b>{offering}</b> faturaları <b>{m?.remap_to}</b> kategorisinde sayılıyor.
+            <Button size="sm" variant="secondary" className="mt-2" disabled={busy} onClick={() => remap(null)}>Taşımayı geri al</Button>
+          </div>
+        )}
+        {billed && (
+          <div className="rounded-lg border p-3">
+            <p className="text-xs font-medium text-slate-600">Bu müşteride bu faturalar aslında başka bir hizmet mi?</p>
+            <p className="text-[11px] text-slate-400">Ör. Paraşüt'te "HİZMET" kesilen ama danışmanlık olan işler. Yalnızca bu müşteri için geçerlidir; Paraşüt'teki kayıt değişmez.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <select value={remapTo} onChange={e => setRemapTo(e.target.value)} className="h-8 rounded border px-2 text-xs">
+                <option value="">Kategori seçin</option>
+                {data.offerings.filter(o => o !== offering).map(o => <option key={o} value={o}>{o}</option>)}
+                <option value="__new">+ Yeni kategori adı</option>
+              </select>
+              {remapTo === '__new' && <input value={remapNew} onChange={e => setRemapNew(e.target.value)} placeholder="Ör. Danışmanlık" className="h-8 rounded border px-2 text-xs" />}
+              <Button size="sm" variant="secondary" disabled={busy || !data.ready || !remapTo || (remapTo === '__new' && !remapNew.trim())} onClick={() => remap(remapTo === '__new' ? remapNew.trim() : remapTo)}>Bu kategoride say</Button>
+            </div>
+          </div>
+        )}
         {st === 'buying' && !billed && <p className="text-xs text-slate-500">Elle "Alıyor" olarak işaretlendi (son 12 ayda bu kategoride fatura görünmüyor).</p>}
-        {!billed && (
+        {!billed && st !== 'remapped' && (
           <>
             <div>
               <p className="mb-1 text-xs font-medium text-slate-600">Değerlendirmeniz <span className="font-normal text-slate-400">— faturası farklı kategoride kesilen veya Paraşüt dışı alımlar için "Alıyor" seçin</span></p>

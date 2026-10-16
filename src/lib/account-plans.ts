@@ -47,20 +47,22 @@ export const emptyPlan = (customerId: string, year: number, ownerId: string | nu
 /** Yeni plan için öneri: geçen yıl + büyüme, beyaz alan önerileri */
 export function suggestPlan(ws: WSData, customerId: string, year: number, ownerId: string | null): Plan {
   const p = emptyPlan(customerId, year, ownerId);
-  const prev = yearRevenue(ws, customerId, year - 1); const cur = yearRevenue(ws, customerId, year);
-  const pr = progress(null, cur, year);
-  const base = Math.max(prev, year === new Date().getFullYear() ? pr.projection : cur);
+  const elapsed = progress(1, 0, year).expected;           // yılın geçen oranı (geçmiş yıl = 1)
+  const proj = (v: number) => (year === new Date().getFullYear() ? v / Math.max(elapsed, 0.05) : v);
+  const r1000 = (v: number) => Math.round(v / 1000) * 1000;
+  // Her kategori: max(geçen yıl, bu yıl yıl sonu tahmini) × %10 büyüme; almadığı kategorilerde çapraz satış önerisi
   const cats: CategoryTarget[] = [];
-  ws.offerings.filter(o => o !== UNCATEGORIZED).forEach(o => {
-    const c = ws.cells[customerId]?.[o];
-    const last = n(c?.byYear[year - 1]); const now = n(c?.byYear[year]);
-    const sg = ws.suggestions.find(s => s.customer_id === customerId && s.offering === o);
-    if (last > 0 || now > 0) cats.push({ offering: o, target: Math.round(Math.max(last * 1.1, now) / 1000) * 1000 });
-    else if (sg) cats.push({ offering: o, target: Math.round(sg.est / 1000) * 1000, note: 'Çapraz satış hedefi' });
+  let other = 0;                                            // kategorisiz ciro (toplama dahil, satır olarak değil)
+  Object.entries(ws.cells[customerId] || {}).forEach(([o, c]) => {
+    const base = Math.max(n(c.byYear[year - 1]), proj(n(c.byYear[year])));
+    if (base <= 0) return;
+    if (o === UNCATEGORIZED || !ws.offerings.includes(o)) other += base * 1.1;
+    else cats.push({ offering: o, target: r1000(base * 1.1) });
   });
+  ws.suggestions.filter(s => s.customer_id === customerId && !cats.some(c => c.offering === s.offering))
+    .slice(0, 3).forEach(s => cats.push({ offering: s.offering, target: r1000(s.est * 0.5), note: 'Çapraz satış hedefi (önerinin yarısı)' }));
   p.category_targets = cats;
-  const catSum = cats.reduce((a, c) => a + n(c.target), 0);
-  p.revenue_target = Math.round(Math.max(base * 1.1, catSum) / 1000) * 1000 || null;
+  p.revenue_target = r1000(cats.reduce((a, c) => a + n(c.target), 0) + other) || null;
   return p;
 }
 

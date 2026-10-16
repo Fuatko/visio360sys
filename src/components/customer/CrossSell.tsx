@@ -16,7 +16,7 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
 
   if (!d) return <Card className="p-6 text-sm text-slate-500">Yükleniyor…</Card>;
   const offs = d.offerings.filter(o => o !== UNCATEGORIZED || d.cells[customer.id]?.[o]);
-  const order = ['buying', 'quoted', 'opportunity', 'lapsed', 'suggested', 'empty', 'competitor', 'not_now', 'no_need'];
+  const order = ['buying', 'remapped', 'quoted', 'opportunity', 'lapsed', 'suggested', 'empty', 'competitor', 'not_now', 'no_need'];
   const rows = offs.map(o => {
     const st = d.stateOf(customer.id, o); const sg = d.suggestions.find(s => s.offering === o);
     return { o, st: st === 'empty' && sg ? 'suggested' as const : st, x: d.cells[customer.id]?.[o], sg, m: d.marks[customer.id]?.[o] };
@@ -42,6 +42,7 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
               <p className="font-medium">{r.o}</p>
               <p className="truncate text-xs text-slate-500">
                 {r.st === 'buying' ? (r.x && r.x.rev12 > 0 ? `${r.x.count} belge · son alım ${r.x.last ? new Date(r.x.last).toLocaleDateString('tr-TR') : '-'}${r.x.products.length ? ' · ' + r.x.products.slice(0, 4).join(', ') : ''}` : `Elle işaretlendi${r.m?.note ? ' · ' + r.m.note : ''}`)
+                  : r.st === 'remapped' ? `Bu müşteride ${r.m?.remap_to} olarak sayılıyor`
                   : r.sg ? r.sg.reason
                   : r.m ? [r.m.competitor, r.m.note].filter(Boolean).join(' · ') || STATE[r.st].label
                   : 'Bu kategoride alım yok. Değerlendirme girmek için tıklayın.'}
