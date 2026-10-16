@@ -47,7 +47,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const yearAgo = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
   const [custs, docs, prods, orders, quotes, marksRes, offRes] = await Promise.all([
     safe(supabase.from('customers').select('id, name, status, segment, sector, assigned_to, customer_type, merged_into, phone, is_key_account').order('name').limit(10000)),
-    safe(supabase.from('parasut_documents').select('id, customer_id, doc_no, issue_date, net_total_try, category').eq('kind', 'sales_invoice').not('customer_id', 'is', null).limit(10000)),
+    safe(supabase.from('parasut_documents').select('id, customer_id, doc_no, issue_date, net_total_try, category, contact_parasut_id').eq('kind', 'sales_invoice').not('customer_id', 'is', null).limit(10000)),
     safe(supabase.from('products').select('id, name, category').limit(10000)),
     safe(supabase.from('orders').select('id, customer_id, order_date, created_at, status, quote_id').neq('status', 'cancelled').limit(10000)),
     safe(supabase.from('quotes').select('id, customer_id, quote_number, revision, status, created_at, sent_at').gte('created_at', yearAgo).limit(5000)),
@@ -55,9 +55,9 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     safe(supabase.from('whitespace_offerings').select('*')),
   ]);
   const [buys, catMap, taxRows] = await Promise.all([
-    safe(supabase.from('parasut_documents').select('id, customer_id, tax_number, issue_date, net_total_try, category').eq('kind', 'purchase_bill').limit(10000)),
+    safe(supabase.from('parasut_documents').select('id, customer_id, tax_number, contact_parasut_id, contact_name, issue_date, net_total_try, category').eq('kind', 'purchase_bill').limit(10000)),
     safe(supabase.from('parasut_category_map').select('purchase_category, business_line')),
-    safe(supabase.from('customers').select('id, tax_number').not('tax_number', 'is', null).limit(10000)),
+    safe(supabase.from('customers').select('id, name, legal_name, tax_number, merged_into').limit(10000)),
   ]);
   const ready = !marksRes.error;
 
@@ -184,7 +184,22 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     const lc = low(cat); return sellOffs.find(o => lc.includes(low(o)) || low(o).includes(lc)) || null;
   };
   // Firmaya ait alış faturaları (müşteri eşleşmesi veya vergi no)
-  const cand = buys.map((b: any) => ({ b, cust: b.customer_id || byTax.get(String(b.tax_number || '').replace(/\D/g, '')) })).filter((x: any) => x.cust && n(x.b.net_total_try) > 0);
+  // Eşleşme sırası: kayıtlı müşteri → vergi no → aynı Paraşüt carisi (satış faturalarından) → firma adı
+  const byContact = new Map<string, string>();
+  docs.forEach((d: any) => { if (d.contact_parasut_id && d.customer_id) byContact.set(String(d.contact_parasut_id), d.customer_id); });
+  const STOP = new Set(['özel', 'ozel', 'türk', 'turk', 'türkiye', 'istanbul', 'anadolu', 'yeni', 'grup', 'group', 'sanayi', 'ticaret', 'bilişim', 'teknoloji', 'hizmetleri', 'ltd', 'şti', 'a.ş.', 'aş']);
+  const key = (v: any) => low(String(v || '')).replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(w => w.length >= 4 && !STOP.has(w));
+  const byWord = new Map<string, string | null>();
+  taxRows.filter((c: any) => !c.merged_into).forEach((c: any) => {
+    const w = key(c.name)[0]; if (!w) return;
+    byWord.set(w, byWord.has(w) && byWord.get(w) !== c.id ? null : c.id);   // aynı kelimeyle birden fazla müşteri varsa belirsiz
+  });
+  const byFullName = new Map<string, string>();
+  taxRows.forEach((c: any) => { [c.name, c.legal_name].forEach(nm => { const k = key(nm).join(' '); if (k) byFullName.set(k, c.id); }); });
+  const custOfBuy = (b: any) => b.customer_id || byTax.get(String(b.tax_number || '').replace(/\D/g, ''))
+    || (b.contact_parasut_id && byContact.get(String(b.contact_parasut_id)))
+    || byFullName.get(key(b.contact_name).join(' ')) || (key(b.contact_name)[0] && byWord.get(key(b.contact_name)[0])) || null;
+  const cand = buys.map((b: any) => ({ b, cust: custOfBuy(b) })).filter((x: any) => x.cust && n(x.b.net_total_try) > 0);
   // Bu alımlarla kesilen satış faturaları (İş Kolları & Bayi İşleri eşleştirmesi) — kategori bulunamazsa satış faturasının kategorisi kullanılır
   const linkMap = new Map<string, string[]>();
   const candIds = cand.map((x: any) => x.b.id);
