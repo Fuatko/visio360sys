@@ -8,7 +8,7 @@ const safe = async (q: any) => { try { const r = await q; return r.error ? [] : 
 const day = (d: any) => String(d || '').slice(0, 10);
 
 export const MARK_LABEL: Record<string, string> = {
-  opportunity: 'Fırsat', competitor: 'Rakipten alıyor', no_need: 'İhtiyaç yok', not_now: 'Şimdi değil',
+  buying: 'Alıyor', opportunity: 'Fırsat', competitor: 'Rakipten alıyor', no_need: 'İhtiyaç yok', not_now: 'Şimdi değil',
 };
 export const UNCATEGORIZED = 'Kategorisiz';
 
@@ -70,20 +70,37 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   // 1) Paraşüt satış faturaları — fatura kategorisi esas
   const parasutCust = new Set<string>(docs.map((d: any) => String(d.customer_id)));
   const docOff = new Map<string, string>();
-  const docById = new Map<string, any>(docs.map((d: any) => [d.id, d]));
-  docs.forEach((d: any) => { const off = canon(d.category); docOff.set(d.id, off); if (n(d.net_total_try) > 0) addSale(d.customer_id, off, day(d.issue_date), n(d.net_total_try)); });
+    // Fatura kalemleri (ürün adları + kategorisi boş faturalarda kategori tahmini için)
+  const linesByDoc = new Map<string, string[]>();
   if (docs.length) {
     const ids = docs.map((d: any) => d.id);
     for (let i = 0; i < ids.length; i += 200) {
       const lines = await safe(supabase.from('parasut_document_lines').select('document_id, product_name, description').in('document_id', ids.slice(i, i + 200)));
       lines.forEach((l: any) => {
-        const d = docById.get(l.document_id); if (!d) return;
         const name = String(l.product_name || l.description || '').trim(); if (!name) return;
-        const x = cell(d.customer_id, docOff.get(d.id)!);
-        if (!x.products.includes(name) && x.products.length < 12) x.products.push(name);
+        (linesByDoc.get(l.document_id) || linesByDoc.set(l.document_id, []).get(l.document_id)!).push(name);
       });
     }
   }
+  // Kategorisi boş faturada: kalem adı bilinen bir kategori adını içeriyorsa (ör. "Danışmanlık Hizmeti" → Danışmanlık) ya da katalogdaki ürünse o kategori
+  const low = (v: string) => v.toLocaleLowerCase('tr-TR');
+  const known = [...new Set<string>([...docs.filter((d: any) => String(d.category || '').trim()).map((d: any) => canon(d.category)), ...prods.filter((p: any) => p.category).map((p: any) => canon(p.category))])].filter(k => k !== UNCATEGORIZED);
+  const prodByName = new Map<string, any>(prods.map((p: any) => [low(String(p.name || '')), p]));
+  const infer = (docId: string) => {
+    for (const t of linesByDoc.get(docId) || []) {
+      const lt = low(t);
+      const p = prodByName.get(lt); if (p?.category) return canon(p.category);
+      const k = known.find(k => { const lk = low(k); const stem = lk.split(/\s+/)[0]; return lt.includes(lk) || (stem.length >= 5 && lt.includes(stem)); });
+      if (k) return k;
+    }
+    return null;
+  };
+  docs.forEach((d: any) => {
+    const off = String(d.category || '').trim() ? canon(d.category) : infer(d.id) || UNCATEGORIZED;
+    docOff.set(d.id, off);
+    if (n(d.net_total_try) > 0) addSale(d.customer_id, off, day(d.issue_date), n(d.net_total_try));
+    (linesByDoc.get(d.id) || []).forEach(name => { const x = cell(d.customer_id, off); if (!x.products.includes(name) && x.products.length < 12) x.products.push(name); });
+  });
 
   // 2) Paraşüt faturası olmayan müşterilerde yazılım siparişleri — ürün kategorisi esas
   const ownOrders = orders.filter((o: any) => o.customer_id && !parasutCust.has(String(o.customer_id)));
@@ -147,6 +164,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const stateOf = (cid: string, o: string): WSState => {
     const x = cells[cid]?.[o]; const m = marks[cid]?.[o];
     if (x && x.rev12 > 0) return 'buying';
+    if (m?.status === 'buying') return 'buying';
     if (m && m.status !== 'opportunity') return m.status;
     if (m?.status === 'opportunity') return 'opportunity';
     if (x?.quoted) return 'quoted';

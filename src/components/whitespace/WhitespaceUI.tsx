@@ -39,6 +39,7 @@ export function MarkEditor({ supabase, data, customer, offering, onClose, onSave
   const x = data.cells[customer.id]?.[offering];
   const m = data.marks[customer.id]?.[offering];
   const st = data.stateOf(customer.id, offering);
+  const billed = !!x && x.rev12 > 0;   // faturadan gelen alım: değerlendirme gerekmez
   const sug = data.suggestions.find(s => s.customer_id === customer.id && s.offering === offering);
   const [status, setStatus] = useState<string>(m?.status || '');
   const [est, setEst] = useState<string>(m?.est_value != null ? String(m.est_value) : sug ? String(Math.round(sug.est)) : '');
@@ -81,10 +82,11 @@ export function MarkEditor({ supabase, data, customer, offering, onClose, onSave
           {m?.opportunity_id && <p className="mt-1 text-xs">Bu alan için fırsat açıldı · <Link href="/opportunities" className="underline">Fırsatlar</Link></p>}
         </div>
         {!data.ready && <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">Değerlendirmeleri kaydetmek için <b>capraz-satis-hatirlatma.sql</b> dosyasını Supabase'de çalıştırın. Fırsat oluşturma şimdi de çalışır.</p>}
-        {st !== 'buying' && (
+        {st === 'buying' && !billed && <p className="text-xs text-slate-500">Elle "Alıyor" olarak işaretlendi (son 12 ayda bu kategoride fatura görünmüyor).</p>}
+        {!billed && (
           <>
             <div>
-              <p className="mb-1 text-xs font-medium text-slate-600">Değerlendirmeniz</p>
+              <p className="mb-1 text-xs font-medium text-slate-600">Değerlendirmeniz <span className="font-normal text-slate-400">— faturası farklı kategoride kesilen veya Paraşüt dışı alımlar için "Alıyor" seçin</span></p>
               <div className="flex flex-wrap gap-1.5">
                 {[['', 'Yok'], ...Object.entries(MARK_LABEL)].map(([k, l]) => (
                   <button key={k} onClick={() => setStatus(k)} className={`rounded-full border px-3 py-1 text-xs ${status === k ? 'border-indigo-600 bg-indigo-600 text-white' : 'hover:bg-slate-50'}`}>{l}</button>

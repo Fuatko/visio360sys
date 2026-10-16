@@ -102,7 +102,7 @@ export default function WhitespacePage() {
                             <td key={o} className="px-1.5 py-1.5">
                               <button onClick={() => setEdit({ customer: c, offering: o })} title={sg?.reason || STATE[shown].label}
                                 className={`h-11 w-full rounded-md border px-1 text-center text-[11px] leading-tight transition hover:ring-2 hover:ring-indigo-200 ${STATE[shown].cls}`}>
-                                {shown === 'buying' ? <><b className="block text-xs">{short(x!.rev12)}</b>{x!.count} belge</>
+                                {shown === 'buying' ? (x && x.rev12 > 0 ? <><b className="block text-xs">{short(x.rev12)}</b>{x.count} belge</> : <><b className="block">Alıyor</b>elle işaretli</>)
                                   : shown === 'lapsed' ? <><b className="block">Uyuyan</b>son {x?.last ? new Date(x.last).toLocaleDateString('tr-TR', { month: 'short', year: '2-digit' }) : '-'}</>
                                   : shown === 'empty' ? '—'
                                   : <><b className="block">{STATE[shown].label}</b>{sg ? short(sg.est) : ''}</>}

@@ -41,13 +41,13 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
             <div className="min-w-0 flex-1">
               <p className="font-medium">{r.o}</p>
               <p className="truncate text-xs text-slate-500">
-                {r.st === 'buying' ? `${r.x!.count} belge · son alım ${r.x!.last ? new Date(r.x!.last).toLocaleDateString('tr-TR') : '-'}${r.x!.products.length ? ' · ' + r.x!.products.slice(0, 4).join(', ') : ''}`
+                {r.st === 'buying' ? (r.x && r.x.rev12 > 0 ? `${r.x.count} belge · son alım ${r.x.last ? new Date(r.x.last).toLocaleDateString('tr-TR') : '-'}${r.x.products.length ? ' · ' + r.x.products.slice(0, 4).join(', ') : ''}` : `Elle işaretlendi${r.m?.note ? ' · ' + r.m.note : ''}`)
                   : r.sg ? r.sg.reason
                   : r.m ? [r.m.competitor, r.m.note].filter(Boolean).join(' · ') || STATE[r.st].label
                   : 'Bu kategoride alım yok. Değerlendirme girmek için tıklayın.'}
               </p>
             </div>
-            <p className="w-32 text-right">{r.st === 'buying' ? <><b>{tl(r.x!.rev12)}</b><span className="block text-[10px] text-slate-400">son 12 ay</span></>
+            <p className="w-32 text-right">{r.st === 'buying' ? (r.x && r.x.rev12 > 0 ? <><b>{tl(r.x.rev12)}</b><span className="block text-[10px] text-slate-400">son 12 ay</span></> : null)
               : r.sg ? <><b className="text-indigo-700">{tl(r.sg.est)}</b><span className="block text-[10px] text-slate-400">tahmini / yıl</span></> : null}</p>
           </button>
         ))}</div>
