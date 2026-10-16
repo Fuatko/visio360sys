@@ -16,7 +16,7 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
 
   if (!d) return <Card className="p-6 text-sm text-slate-500">Yükleniyor…</Card>;
   const offs = d.offerings.filter(o => o !== UNCATEGORIZED || d.cells[customer.id]?.[o]);
-  const order = ['buying', 'remapped', 'quoted', 'opportunity', 'lapsed', 'suggested', 'empty', 'competitor', 'not_now', 'no_need'];
+  const order = ['buying', 'supplier', 'remapped', 'quoted', 'opportunity', 'lapsed', 'suggested', 'empty', 'competitor', 'not_now', 'no_need'];
   const rows = offs.map(o => {
     const st = d.stateOf(customer.id, o); const sg = d.suggestions.find(s => s.offering === o);
     return { o, st: st === 'empty' && sg ? 'suggested' as const : st, x: d.cells[customer.id]?.[o], sg, m: d.marks[customer.id]?.[o] };
@@ -42,6 +42,7 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
               <p className="font-medium">{r.o}</p>
               <p className="truncate text-xs text-slate-500">
                 {r.st === 'buying' ? (r.x && r.x.rev12 > 0 ? `${r.x.count} belge · son alım ${r.x.last ? new Date(r.x.last).toLocaleDateString('tr-TR') : '-'}${r.x.products.length ? ' · ' + r.x.products.slice(0, 4).join(', ') : ''}` : `Elle işaretlendi${r.m?.note ? ' · ' + r.m.note : ''}`)
+                  : r.st === 'supplier' ? `Bu kategoride bu firmadan alıyorsunuz · ${r.x!.supply!.count} alış faturası${r.x!.supply!.resale12 > 0 ? ` · bu alımlarla ${tl(r.x!.supply!.resale12)} satış${r.x!.supply!.resaleTo.length ? ` (${r.x!.supply!.resaleTo.join(', ')})` : ''}` : ''}`
                   : r.st === 'remapped' ? `Bu müşteride ${r.m?.remap_to} olarak sayılıyor`
                   : r.sg ? r.sg.reason
                   : r.m ? [r.m.competitor, r.m.note].filter(Boolean).join(' · ') || STATE[r.st].label
@@ -49,6 +50,7 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
               </p>
             </div>
             <p className="w-32 text-right">{r.st === 'buying' ? (r.x && r.x.rev12 > 0 ? <><b>{tl(r.x.rev12)}</b><span className="block text-[10px] text-slate-400">son 12 ay</span></> : null)
+              : r.st === 'supplier' ? <><b className="text-stone-700">{tl(r.x!.supply!.buy12)}</b><span className="block text-[10px] text-slate-400">alış · son 12 ay</span></>
               : r.sg ? <><b className="text-indigo-700">{tl(r.sg.est)}</b><span className="block text-[10px] text-slate-400">tahmini / yıl</span></> : null}</p>
           </button>
         ))}</div>

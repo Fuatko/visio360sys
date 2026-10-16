@@ -20,8 +20,9 @@ export type WSCell = {
   byYear: Record<number, number>;  // takvim yılı bazında KDV hariç
   products: string[];       // alınan ürün / hizmet adları
   quoted: { id: string; no: string; date: string } | null;  // son 12 ayda verilen, siparişe dönmemiş teklif
+  supply?: { buy12: number; buyAll: number; count: number; last: string | null; resale12: number; resaleTo: string[] };  // bu firmadan bu kategoride alışlarımız (ana firma / tedarikçi)
 };
-export type WSState = 'buying' | 'remapped' | 'lapsed' | 'quoted' | 'opportunity' | 'competitor' | 'no_need' | 'not_now' | 'suggested' | 'empty';
+export type WSState = 'buying' | 'supplier' | 'remapped' | 'lapsed' | 'quoted' | 'opportunity' | 'competitor' | 'no_need' | 'not_now' | 'suggested' | 'empty';
 export type WSSuggestion = {
   customer_id: string; customer: string; assigned_to: string | null; offering: string;
   est: number; score: number; reason: string; state: WSState;
@@ -51,6 +52,11 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     safe(supabase.from('quotes').select('id, customer_id, quote_number, revision, status, created_at, sent_at').gte('created_at', yearAgo).limit(5000)),
     supabase.from('whitespace_marks').select('*').limit(10000),
     safe(supabase.from('whitespace_offerings').select('*')),
+  ]);
+  const [buys, catMap, taxRows] = await Promise.all([
+    safe(supabase.from('parasut_documents').select('id, customer_id, tax_number, issue_date, net_total_try, category').eq('kind', 'purchase_bill').limit(10000)),
+    safe(supabase.from('parasut_category_map').select('purchase_category, business_line')),
+    safe(supabase.from('customers').select('id, tax_number').not('tax_number', 'is', null).limit(10000)),
   ]);
   const ready = !marksRes.error;
 
@@ -162,6 +168,44 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     .sort((a, b) => b.rev12 - a.rev12 || a.name.localeCompare(b.name, 'tr'));
   const offerings = allOfferings.filter(o => !o.hidden && !o.merge_into).map(o => o.name);
 
+  // Ana firma / tedarikçi: bu firmadan satış kategorilerimizde yaptığımız alışlar (ör. ERACOM'dan Teknik Servis parçası)
+  // Satış kategorisine eşleme: İş Kolları ekranındaki gider kategorisi eşlemesi, yoksa ad benzerliği ("Teknik Servis Alışları" → "Teknik Servis")
+  const mapOf = new Map<string, string>(catMap.map((m: any) => [String(m.purchase_category), String(m.business_line)]));
+  const byTax = new Map<string, string>();
+  taxRows.forEach((c: any) => { const t = String(c.tax_number || '').replace(/\D/g, ''); if (t && !byTax.has(t)) byTax.set(t, c.id); });
+  const sellOffs = offerings.filter(o => o !== UNCATEGORIZED);
+  const supplyOff = (cat: string) => {
+    if (!cat) return null;
+    const mapped = mapOf.get(cat); if (mapped) { const k = canon(mapped); return sellOffs.includes(k) ? k : null; }
+    const k = canon(cat); if (sellOffs.includes(k)) return k;
+    const lc = low(cat); return sellOffs.find(o => lc.includes(low(o))) || null;
+  };
+  const buyCust = new Map<string, string>(); const buyOff = new Map<string, string>();
+  buys.forEach((b: any) => {
+    const cust = b.customer_id || byTax.get(String(b.tax_number || '').replace(/\D/g, '')); if (!cust) return;
+    const off = supplyOff(String(b.category || '').trim()); if (!off) return;
+    const amt = n(b.net_total_try); if (amt <= 0) return;
+    buyCust.set(b.id, cust); buyOff.set(b.id, off);
+    const x = cell(cust, off); const sp = (x.supply ||= { buy12: 0, buyAll: 0, count: 0, last: null, resale12: 0, resaleTo: [] });
+    const d = day(b.issue_date); sp.buyAll += amt; sp.count++; if (d >= yearAgo) sp.buy12 += amt; if (!sp.last || d > sp.last) sp.last = d;
+  });
+  if (buyCust.size) {
+    // Bu alımlarla kesilen satış faturaları (İş Kolları & Bayi İşleri eşleştirmesi)
+    const ids = [...buyCust.keys()];
+    const custName = new Map<string, string>(custs.map((c: any) => [c.id, c.name]));
+    for (let i = 0; i < ids.length; i += 200) {
+      const links = await safe(supabase.from('parasut_doc_links').select('purchase_doc_id, sales_doc_id').in('purchase_doc_id', ids.slice(i, i + 200)));
+      const seen = new Set<string>();
+      links.forEach((l: any) => {
+        const sd = docs.find((d: any) => d.id === l.sales_doc_id); const cust = buyCust.get(l.purchase_doc_id); if (!sd || !cust || seen.has(sd.id + cust)) return;
+        seen.add(sd.id + cust);
+        const sp = cells[cust]?.[buyOff.get(l.purchase_doc_id)!]?.supply; if (!sp) return;
+        if (day(sd.issue_date) >= yearAgo) sp.resale12 += n(sd.net_total_try);
+        const nm = custName.get(sd.customer_id); if (nm && !sp.resaleTo.includes(nm) && sp.resaleTo.length < 5) sp.resaleTo.push(nm);
+      });
+    }
+  }
+
   // Kategori istatistikleri
   const stats: WSData['stats'] = {};
   offerings.forEach(o => {
@@ -174,6 +218,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     if (x && x.rev12 > 0) return 'buying';
     if (m?.status === 'remap') return 'remapped';
     if (m?.status === 'buying') return 'buying';
+    if (x?.supply && x.supply.buyAll > 0) return 'supplier';
     if (m && m.status !== 'opportunity') return m.status;
     if (m?.status === 'opportunity') return 'opportunity';
     if (x?.quoted) return 'quoted';
@@ -188,7 +233,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     offerings.forEach(o => {
       if (o === UNCATEGORIZED) return;
       const st = stateOf(c.id, o);
-      if (['buying', 'remapped', 'competitor', 'no_need', 'not_now'].includes(st)) return;
+      if (['buying', 'supplier', 'remapped', 'competitor', 'no_need', 'not_now'].includes(st)) return;
       const x = cells[c.id]?.[o]; const m = marks[c.id]?.[o]; const s = stats[o];
       const peers = c.sector ? customers.filter((p: any) => p.id !== c.id && p.sector === c.sector) : [];
       const usePeers = peers.length >= 2;

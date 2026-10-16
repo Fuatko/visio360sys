@@ -11,6 +11,7 @@ export const tl = (v: any) => `₺${formatMoney(Math.round(Number(v) || 0))}`;
 export const short = (v: number) => (v >= 1e6 ? `₺${(v / 1e6).toLocaleString('tr-TR', { maximumFractionDigits: 1 })} Mn` : v >= 1e3 ? `₺${Math.round(v / 1e3).toLocaleString('tr-TR')} B` : tl(v));
 
 export const STATE: Record<WSState, { label: string; cls: string; dot: string }> = {
+  supplier:    { label: 'Ana firma (alış)', cls: 'bg-stone-50 text-stone-700 border-stone-300', dot: 'bg-stone-500' },
   remapped:    { label: 'Taşındı',         cls: 'bg-slate-50 text-slate-500 border-dashed border-slate-300', dot: 'bg-slate-300' },
   buying:      { label: 'Alıyor',          cls: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' },
   lapsed:      { label: 'Uyuyan',          cls: 'bg-amber-50 text-amber-800 border-amber-200',       dot: 'bg-amber-500' },
@@ -26,7 +27,7 @@ export const STATE: Record<WSState, { label: string; cls: string; dot: string }>
 export function Legend() {
   return (
     <div className="flex flex-wrap gap-3 text-[11px] text-slate-600">
-      {(['buying', 'lapsed', 'quoted', 'opportunity', 'suggested', 'competitor', 'no_need'] as WSState[]).map(k => (
+      {(['buying', 'lapsed', 'quoted', 'opportunity', 'suggested', 'supplier', 'competitor', 'no_need'] as WSState[]).map(k => (
         <span key={k} className="flex items-center gap-1"><span className={`h-2.5 w-2.5 rounded-full ${STATE[k].dot}`} />{STATE[k].label}</span>
       ))}
     </div>
@@ -92,6 +93,14 @@ export function MarkEditor({ supabase, data, customer, offering, onClose, onSave
           {m?.opportunity_id && <p className="mt-1 text-xs">Bu alan için fırsat açıldı · <Link href="/opportunities" className="underline">Fırsatlar</Link></p>}
         </div>
         {!data.ready && <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">Değerlendirmeleri kaydetmek için <b>capraz-satis-hatirlatma.sql</b> dosyasını Supabase'de çalıştırın. Fırsat oluşturma şimdi de çalışır.</p>}
+        {x?.supply && x.supply.buyAll > 0 && (
+          <div className="rounded-lg border border-stone-300 bg-stone-50 p-3 text-xs text-stone-700">
+            <p className="font-semibold">Bu kategoride {customer.name} sizin ana firmanız / tedarikçiniz</p>
+            <p>Son 12 ay alış {tl(x.supply.buy12)} · toplam {tl(x.supply.buyAll)} · {x.supply.count} fatura · son alış {x.supply.last ? new Date(x.supply.last).toLocaleDateString('tr-TR') : '-'}</p>
+            {x.supply.resale12 > 0 && <p>Bu alımlarla son 12 ayda {tl(x.supply.resale12)} satış{x.supply.resaleTo.length ? ` (${x.supply.resaleTo.join(', ')})` : ''} · brüt kâr {tl(x.supply.resale12 - x.supply.buy12)}</p>}
+            <p className="mt-1">Satış fırsatı olarak önerilmez. Alış–satış eşleştirmesi ve kârlılık: <Link href="/business-lines" className="underline">İş Kolları & Bayi İşleri</Link></p>
+          </div>
+        )}
         {st === 'remapped' && (
           <div className="rounded-lg border border-dashed p-3 text-xs text-slate-600">
             Bu müşterinin <b>{offering}</b> faturaları <b>{m?.remap_to}</b> kategorisinde sayılıyor.
