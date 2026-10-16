@@ -1,3 +1,4 @@
+import { fetchAll } from '@/lib/fetch-all';
 // Paraşüt satış faturalarını yazılımın sipariş / tahsilat verisine "sanal kayıt" olarak katar.
 // Böylece müşteri başarısı, panolar, müşteri kartı ve analizler elle veri girmeden gerçek ciro ve alacakla çalışır.
 // Kural: Paraşüt faturası olan müşteride gelir ve alacak Paraşüt'ten gelir (fatura esas alınır);
@@ -14,12 +15,13 @@ export type ParasutSale = {
 /** Kurumun müşteriye bağlı Paraşüt satış faturaları (tablo yoksa / yetki yoksa boş döner) */
 export async function loadParasutSales(supabase: any, customerId?: string): Promise<ParasutSale[]> {
   try {
-    let q = supabase.from('parasut_documents')
-      .select('id, customer_id, doc_no, issue_date, due_date, currency, exchange_rate, net_total_try, gross_total, vat_total, remaining, payment_status, category')
-      .eq('kind', 'sales_invoice').not('customer_id', 'is', null).limit(10000);
-    if (customerId) q = q.eq('customer_id', customerId);
-    const { data, error } = await q;
-    return error ? [] : (data || []);
+    return await fetchAll(() => {
+      let q = supabase.from('parasut_documents')
+        .select('id, customer_id, doc_no, issue_date, due_date, currency, exchange_rate, net_total_try, gross_total, vat_total, remaining, payment_status, category')
+        .eq('kind', 'sales_invoice').not('customer_id', 'is', null).order('id');
+      if (customerId) q = q.eq('customer_id', customerId);
+      return q;
+    });
   } catch { return []; }
 }
 

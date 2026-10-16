@@ -60,6 +60,12 @@ export default function CrossSell({ supabase, customer }: { supabase: any; custo
           Bu firmadan {u.count} alış faturanız var{u.buy12 > 0 ? ` (son 12 ay ${tl(u.buy12)})` : ''} ama satış kategorilerinizle eşleşmedi. Faturalardaki gider kategorileri: <b>{u.cats.join(', ')}</b>.
           {' '}<Link href="/business-lines" className="font-medium underline">İş Kolları & Bayi İşleri</Link> ekranında bu kategoriyi ilgili iş koluna (ör. Teknik Servis) eşleyin; satır "Ana firma (alış)" olarak görünür.
         </div>); })()}
+      {!d.unmatchedSupply[customer.id] && !rows.some(r => r.st === 'supplier') && (customer.relation_roles || []).some((r: string) => r === 'principal' || r === 'supplier') && (
+        <div className="border-t bg-slate-50 px-4 py-3 text-xs text-slate-600">
+          Bu firma ana firma / tedarikçi olarak işaretli ama okunan {d.buyScanned} alış faturası içinde bu firmaya ait fatura bulunamadı.
+          {d.buyScanned === 0 ? ' Paraşüt\'ten hiç alış faturası gelmemiş görünüyor: Entegrasyonlar → Paraşüt → Senkronize et.' : ' Faturalardaki firma adı veya vergi numarası bu kartla eşleşmiyor olabilir; İş Kolları & Bayi İşleri → Ana firmalar listesinde firmanın nasıl göründüğünü kontrol edin.'}
+        </div>
+      )}
       {edit && <MarkEditor supabase={supabase} data={d} customer={customer} offering={edit} onClose={() => setEdit(null)} onSaved={load} />}
     </Card>
   );

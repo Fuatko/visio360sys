@@ -3,6 +3,8 @@
 // Kaynak: Paraşüt satış faturaları (fatura kategorisi) — Paraşüt faturası olmayan müşterilerde yazılımdaki siparişler (ürün kategorisi).
 // Öneri: benzer müşterilerin (aynı sektör, yoksa tüm aktif müşteriler) bu kategoriyi alma oranı × alanların ortalama yıllık alımı.
 
+import { fetchAll } from '@/lib/fetch-all';
+
 const n = (v: any) => Number(v) || 0;
 const safe = async (q: any) => { try { const r = await q; return r.error ? [] : r.data || []; } catch { return []; } };
 const day = (d: any) => String(d || '').slice(0, 10);
@@ -36,6 +38,7 @@ export type WSData = {
   marks: Record<string, Record<string, any>>;
   stats: Record<string, { buyers: number; avg: number; penetration: number }>;
   unmatchedSupply: Record<string, { buy12: number; count: number; cats: string[] }>;  // satış kategorisine eşleşmeyen alışlar
+  buyScanned: number;                    // okunan alış faturası sayısı (teşhis için)
   suggestions: WSSuggestion[];
   stateOf: (customerId: string, offering: string) => WSState;
 };
@@ -47,7 +50,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const yearAgo = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
   const [custs, docs, prods, orders, quotes, marksRes, offRes] = await Promise.all([
     safe(supabase.from('customers').select('id, name, status, segment, sector, assigned_to, customer_type, merged_into, phone, is_key_account').order('name').limit(10000)),
-    safe(supabase.from('parasut_documents').select('id, customer_id, doc_no, issue_date, net_total_try, category, contact_parasut_id').eq('kind', 'sales_invoice').not('customer_id', 'is', null).limit(10000)),
+    fetchAll(() => supabase.from('parasut_documents').select('id, customer_id, doc_no, issue_date, net_total_try, category, contact_parasut_id').eq('kind', 'sales_invoice').not('customer_id', 'is', null).order('id')),
     safe(supabase.from('products').select('id, name, category').limit(10000)),
     safe(supabase.from('orders').select('id, customer_id, order_date, created_at, status, quote_id').neq('status', 'cancelled').limit(10000)),
     safe(supabase.from('quotes').select('id, customer_id, quote_number, revision, status, created_at, sent_at').gte('created_at', yearAgo).limit(5000)),
@@ -55,7 +58,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
     safe(supabase.from('whitespace_offerings').select('*')),
   ]);
   const [buys, catMap, taxRows] = await Promise.all([
-    safe(supabase.from('parasut_documents').select('id, customer_id, tax_number, contact_parasut_id, contact_name, issue_date, net_total_try, category').eq('kind', 'purchase_bill').limit(10000)),
+    fetchAll(() => supabase.from('parasut_documents').select('id, customer_id, tax_number, contact_parasut_id, contact_name, issue_date, net_total_try, category').eq('kind', 'purchase_bill').order('id')),
     safe(supabase.from('parasut_category_map').select('purchase_category, business_line')),
     safe(supabase.from('customers').select('id, name, legal_name, tax_number, merged_into').limit(10000)),
   ]);
@@ -89,7 +92,8 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   if (docs.length) {
     const ids = docs.map((d: any) => d.id);
     for (let i = 0; i < ids.length; i += 200) {
-      const lines = await safe(supabase.from('parasut_document_lines').select('document_id, product_name, description').in('document_id', ids.slice(i, i + 200)));
+      const chunk = ids.slice(i, i + 200);
+      const lines = await fetchAll(() => supabase.from('parasut_document_lines').select('document_id, product_name, description').in('document_id', chunk).order('id'));
       lines.forEach((l: any) => {
         const name = String(l.product_name || l.description || '').trim(); if (!name) return;
         (linesByDoc.get(l.document_id) || linesByDoc.set(l.document_id, []).get(l.document_id)!).push(name);
@@ -123,7 +127,8 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   if (ownOrders.length) {
     const ids = ownOrders.map((o: any) => o.id);
     for (let i = 0; i < ids.length; i += 150) {
-      const its = await safe(supabase.from('order_items').select('order_id, product_id, quantity, unit_price, discount, total').in('order_id', ids.slice(i, i + 150)));
+      const chunk = ids.slice(i, i + 150);
+      const its = await fetchAll(() => supabase.from('order_items').select('order_id, product_id, quantity, unit_price, discount, total').in('order_id', chunk).order('id'));
       its.forEach((it: any) => {
         const o = ownById.get(it.order_id); if (!o) return;
         const p = prodById.get(it.product_id);
@@ -204,7 +209,8 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   const linkMap = new Map<string, string[]>();
   const candIds = cand.map((x: any) => x.b.id);
   for (let i = 0; i < candIds.length; i += 200) {
-    const links = await safe(supabase.from('parasut_doc_links').select('purchase_doc_id, sales_doc_id').in('purchase_doc_id', candIds.slice(i, i + 200)));
+    const chunk = candIds.slice(i, i + 200);
+    const links = await fetchAll(() => supabase.from('parasut_doc_links').select('purchase_doc_id, sales_doc_id').in('purchase_doc_id', chunk).order('id'));
     links.forEach((l: any) => (linkMap.get(l.purchase_doc_id) || linkMap.set(l.purchase_doc_id, []).get(l.purchase_doc_id)!).push(l.sales_doc_id));
   }
   const salesById = new Map<string, any>(docs.map((d: any) => [d.id, d]));
@@ -277,7 +283,7 @@ export async function loadWhitespace(supabase: any, opts: { customerId?: string 
   });
   suggestions.sort((a, b) => b.score - a.score);
 
-  return { ready, offerings, allOfferings, customers, cells, marks, stats, unmatchedSupply, suggestions, stateOf };
+  return { ready, offerings, allOfferings, customers, cells, marks, stats, unmatchedSupply, buyScanned: buys.length, suggestions, stateOf };
 }
 
 /** Müşteri × kategori değerlendirmesini kaydeder (null = işareti kaldır) */
