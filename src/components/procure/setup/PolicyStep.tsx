@@ -71,6 +71,11 @@ export default function PolicyStep({ policy, orgId, onSaved }: { policy: ProcPol
       <Row label="Varsayılan vade (gün)">
         <input type="number" min={0} className={inp} value={f.default_payment_term_days ?? ''} onChange={e => set('default_payment_term_days', num(e.target.value))} placeholder="Örn. 30" />
       </Row>
+      {'payment_term_monthly_rate_pct' in policy && (
+        <Row label="Vade düzeltme oranı (aylık %)" hint="Teklif karşılaştırmada vadesi uzun teklifi bugünkü değere indirger (opsiyonel; boşsa kapalı)">
+          <input type="number" min={0} step={0.1} className={inp} value={f.payment_term_monthly_rate_pct ?? ''} onChange={e => set('payment_term_monthly_rate_pct', num(e.target.value))} placeholder="Örn. 3" />
+        </Row>
+      )}
       <Row label="Mal kabulde fotoğraf" hint="Teslim alan kişi en az bir fotoğraf eklemek zorunda olsun">
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.require_receipt_photo} onChange={e => set('require_receipt_photo', e.target.checked)} />Zorunlu</label>
       </Row>

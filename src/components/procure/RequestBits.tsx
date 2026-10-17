@@ -2,11 +2,21 @@
 
 // Talep ekranlarının ortak parçaları: durum rozeti, bütçe kutusu
 import { AlertTriangle, CheckCircle2, Wallet } from 'lucide-react';
-import { BudgetCheck, REQUEST_STATUS, RequestStatus, tl } from '@/lib/procure';
+import { BudgetCheck, REQUEST_STATUS, RFQ_STATUS, RequestStatus, RfqStatus, VENDOR_STATUS, VendorStatus, tl } from '@/lib/procure';
 
 export function StatusBadge({ status }: { status: string }) {
   const s = REQUEST_STATUS[status as RequestStatus] || { label: status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   return <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.cls}`}>{s.label}</span>;
+}
+
+export function VendorStatusBadge({ status }: { status: string }) {
+  const s = VENDOR_STATUS[status as VendorStatus] || VENDOR_STATUS.candidate;
+  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.cls}`}>{s.label}</span>;
+}
+
+export function RfqStatusBadge({ status }: { status: string }) {
+  const s = RFQ_STATUS[status as RfqStatus] || { label: status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.cls}`}>{s.label}</span>;
 }
 
 // "Bütçe: ₺X kullanılabilir → onaylanırsa ₺Y kalır"

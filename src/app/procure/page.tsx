@@ -44,13 +44,14 @@ function Panel({ p }: { p: ReturnType<typeof useProcure> }) {
         isFin ? supabase.from('proc_budget_status').select('*').eq('fiscal_year', fy) : Promise.resolve({ data: [] as any[] }),
         isFin ? supabase.rpc('proc_parasut_actuals', { p_fy: fy }) : Promise.resolve({ data: [] as any[] }),
       ]);
+      const rfqs = isBuyer ? (await supabase.from('proc_rfqs').select('id, rfq_no, title, status, deadline').in('status', ['sent', 'closed', 'pending_award']).order('deadline')).data || [] : [];
       const pendIds = idList(pend.data);
       const pendReqs = pendIds.length ? await supabase.from('proc_approvals').select('subject_id').in('id', pendIds) : { data: [] as any[] };
       const pendRows = (pendReqs.data || []).length ? (await supabase.from('proc_requests').select('id, request_no, title, estimated_total, priority').in('id', (pendReqs.data || []).map((x: any) => x.subject_id))).data || [] : [];
       const fm = ((new Date().getMonth() + 1 - start + 12) % 12) + 1;
       setS({
         policy: pol.data, fy, start, missing: !!mine.error && /relation|does not exist/i.test(mine.error.message),
-        mine: mine.data || [], pend: pendRows, open,
+        mine: mine.data || [], pend: pendRows, open, rfqs,
         budget: budget.data || [], monthSpend: ((actual as any).data || []).filter((x: any) => x.fiscal_month === fm).reduce((a: number, x: any) => a + +x.amount, 0),
       });
     })();
@@ -107,7 +108,14 @@ function Panel({ p }: { p: ReturnType<typeof useProcure> }) {
               {toSource.length === 0 ? <p className="text-xs text-slate-400">Yok.</p> : <ul className="space-y-1">{toSource.slice(0, 6).map((r: any) => <li key={r.id}><Link href={`/procure/talepler/${r.id}`} className="flex gap-2 text-sm text-slate-700 hover:text-blue-700"><span className="min-w-0 flex-1 truncate">{r.request_no} · {r.title}</span><span className="shrink-0 text-xs text-slate-400">{r.needed_by ? fmtDate(r.needed_by) : ''}</span></Link></li>)}</ul>}
             </div>
           </div>
-          <p className="mt-2 text-[11px] text-slate-400">Teklif toplama (RFQ), sipariş ve teslimat takibi sonraki fazda bu bölüme eklenecek.</p>
+          <div className="mt-3 border-t border-slate-100 pt-2">
+            <div className="mb-1 flex items-center justify-between"><p className="text-xs font-medium text-slate-500">Teklif toplama ({s.rfqs.length} açık)</p><Link href="/procure/rfq" className="text-xs text-blue-700">Tümü →</Link></div>
+            {s.rfqs.length === 0 ? <p className="text-xs text-slate-400">Açık RFQ yok.</p> : <ul className="space-y-1">{s.rfqs.slice(0, 6).map((f: any) => (
+              <li key={f.id}><Link href={`/procure/rfq/${f.id}`} className="flex gap-2 text-sm text-slate-700 hover:text-blue-700"><span className="min-w-0 flex-1 truncate">{f.rfq_no} · {f.title}</span>
+                <span className={`shrink-0 text-xs ${f.status === 'sent' && f.deadline && new Date(f.deadline) < new Date() ? 'text-rose-600' : 'text-slate-400'}`}>{f.status === 'sent' ? `son tarih ${fmtDate(f.deadline)}` : f.status === 'pending_award' ? 'ödül onayı bekliyor' : 'değerlendirmede'}</span></Link></li>
+            ))}</ul>}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-400">Sipariş ve teslimat takibi sonraki fazda bu bölüme eklenecek.</p>
         </Card>
       )}
 

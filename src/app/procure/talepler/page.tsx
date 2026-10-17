@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/procure/RequestBits';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { fetchAll } from '@/lib/fetch-all';
-import { PROCURE_SQL_1A, REQUEST_STATUS, RequestStatus, fmtDate, tl } from '@/lib/procure';
+import { PROCURE_SQL_1A, REQUEST_STATUS, RequestStatus, fmtDate, loadPeople, peopleMap, tl } from '@/lib/procure';
 import { AlertCircle, ClipboardList, Plus, Search } from 'lucide-react';
 
 type Scope = 'mine' | 'unit' | 'all';
@@ -44,11 +44,11 @@ function RequestList({ seeAll }: { seeAll: boolean }) {
         fetchAll(() => supabase.from('proc_requests').select('id, request_no, title, status, priority, estimated_total, needed_by, created_at, submitted_at, requester_id, cost_center_id').order('created_at', { ascending: false })),
         supabase.rpc('proc_my_cost_centers'),
         supabase.from('proc_cost_centers').select('id, name'),
-        supabase.from('users').select('id, name, full_name, email'),
+        loadPeople(supabase),
       ]);
       setRows(list); setMyCcs(Array.isArray(mine.data) ? mine.data : []);
       setCcNames(Object.fromEntries((cc.data || []).map((c: any) => [c.id, c.name])));
-      setNames(Object.fromEntries((us.data || []).map((u: any) => [u.id, u.name || u.full_name || u.email])));
+      setNames(peopleMap(us));
       if (seeAll) setScope('all'); else if ((Array.isArray(mine.data) ? mine.data : []).length) setScope('unit');
     })();
   }, []);

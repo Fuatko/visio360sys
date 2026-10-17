@@ -11,10 +11,12 @@ import CategoriesStep from '@/components/procure/setup/CategoriesStep';
 import MembersStep, { Member } from '@/components/procure/setup/MembersStep';
 import ApprovalRulesStep from '@/components/procure/setup/ApprovalRulesStep';
 import BudgetBoard from '@/components/procure/BudgetBoard';
+import VendorImport from '@/components/procure/VendorImport';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { Category, CostCenter, DEFAULT_POLICY, ProcPolicy, SETUP_STEPS, isMissingSchema } from '@/lib/procure';
-import { Check, ChevronLeft, ChevronRight, Clock, SkipForward } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, SkipForward } from 'lucide-react';
 
 type Data = { policy: ProcPolicy; hasPolicy: boolean; ccs: CostCenter[]; cats: Category[]; members: Member[]; users: OrgUser[]; missing: boolean };
 
@@ -80,7 +82,6 @@ function Wizard() {
   if (d.missing) return <div className="p-6"><SqlMissingCard /></div>;
 
   const cur = SETUP_STEPS[step];
-  const phase = 'phase' in cur ? cur.phase : null;
   return (
     <div className="space-y-4 p-4 sm:p-6">
       <Card className="p-4">
@@ -117,19 +118,19 @@ function Wizard() {
         {cur.key === 'categories' && <CategoriesStep rows={d.cats} onChange={load} />}
         {cur.key === 'members' && <MembersStep users={d.users} members={d.members} costCenters={d.ccs} orgId={orgId} onChange={load} />}
         {cur.key === 'approval_matrix' && <ApprovalRulesStep users={d.users} costCenters={d.ccs} categories={d.cats} />}
-        {cur.key === 'budget' && <BudgetBoard canEdit />}
-        {phase && (
-          <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-            <div>Bu adım <b>{phase}</b> ile açılacak (tedarikçi tabloları henüz kurulmadı). Şimdilik atlayabilirsiniz; adım açıldığında buradan devam edilir.</div>
+        {cur.key === 'vendors' && (
+          <div className="space-y-3">
+            <VendorImport categories={d.cats} onDone={load} />
+            <p className="text-sm text-slate-600">Tedarikçi profilleri, belgeler ve statüler <Link href="/procure/tedarikciler" className="text-blue-700 underline">Tedarikçiler</Link> ekranından yönetilir. Onaylı tedarikçi listesi zorunluluğu 1. adımdaki politikadan açılır.</p>
           </div>
         )}
+        {cur.key === 'budget' && <BudgetBoard canEdit />}
 
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
           <Button variant="ghost" size="sm" disabled={step === 0} onClick={() => setStep(step - 1)}><ChevronLeft className="h-4 w-4" />Geri</Button>
           <div className="ml-auto flex gap-2">
             {!progress[cur.key] && <Button variant="secondary" size="sm" onClick={() => mark(cur.key, 'skipped')}><SkipForward className="h-3.5 w-3.5" />Atla</Button>}
-            {cur.key !== 'policy' && !phase && <Button size="sm" onClick={() => mark(cur.key, 'done')}><Check className="h-3.5 w-3.5" />Tamamlandı, devam</Button>}
+            {cur.key !== 'policy' && <Button size="sm" onClick={() => mark(cur.key, 'done')}><Check className="h-3.5 w-3.5" />Tamamlandı, devam</Button>}
             {cur.key === 'policy' && step < SETUP_STEPS.length - 1 && <Button variant="secondary" size="sm" onClick={() => setStep(step + 1)}>İleri<ChevronRight className="h-4 w-4" /></Button>}
           </div>
         </div>

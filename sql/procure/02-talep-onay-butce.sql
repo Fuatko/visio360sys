@@ -42,6 +42,13 @@ $$;
 GRANT EXECUTE ON FUNCTION public.proc_fy_start_month(), public.proc_fiscal_year(date), public.proc_fiscal_month(date),
                           public.proc_fiscal_range(text) TO authenticated;
 
+-- Tutar metni Türkçe binlik ayraçla (sunucu yerel ayarından bağımsız): 1234567 → 1.234.567
+CREATE OR REPLACE FUNCTION public.proc_fmt_tl(v numeric)
+RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT replace(to_char(round(COALESCE(v, 0)), 'FM999,999,999,999,990'), ',', '.');
+$$;
+GRANT EXECUTE ON FUNCTION public.proc_fmt_tl(numeric) TO authenticated;
+
 -- Ağaç yardımcıları: kaydın kendisi + üstleri (derinlik 0 = kendisi)
 CREATE OR REPLACE FUNCTION public.proc_cc_ancestors(p_id uuid)
 RETURNS TABLE (id uuid, depth int, manager_user_id uuid, name text) LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
@@ -206,7 +213,7 @@ CREATE TABLE IF NOT EXISTS public.proc_approval_rules (
 CREATE TABLE IF NOT EXISTS public.proc_approvals (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id   uuid,
-  subject_type      text NOT NULL CHECK (subject_type IN ('request','order','contract','payment_certificate')),
+  subject_type      text NOT NULL,
   subject_id        uuid NOT NULL,
   round             int NOT NULL DEFAULT 1,
   step_no           int NOT NULL,
@@ -221,6 +228,10 @@ CREATE TABLE IF NOT EXISTS public.proc_approvals (
   note              text,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
+-- Onay konusu: talep, RFQ ödülü (yetersiz teklif), sipariş, sözleşme, hakediş
+ALTER TABLE public.proc_approvals DROP CONSTRAINT IF EXISTS proc_approvals_subject_type_check;
+ALTER TABLE public.proc_approvals ADD CONSTRAINT proc_approvals_subject_type_check
+  CHECK (subject_type IN ('request','rfq','order','contract','payment_certificate'));
 CREATE INDEX IF NOT EXISTS proc_approvals_subject_idx ON public.proc_approvals (subject_type, subject_id, round, step_no);
 CREATE INDEX IF NOT EXISTS proc_approvals_pending_idx ON public.proc_approvals (organization_id, status) WHERE status = 'pending';
 
@@ -404,6 +415,11 @@ BEGIN
     IF v_status IS DISTINCT FROM 'in_approval' THEN RETURN false; END IF;
     -- Rol adımında talep eden kendi talebini onaylayamaz
     IF a.approver_user_id IS NULL AND v_req = v_me THEN RETURN false; END IF;
+  ELSIF a.subject_type = 'rfq' THEN
+    -- Yetersiz teklifle ödül (03-tedarikci-rfq.sql): ödülü veren satınalma uzmanı kendi kararını onaylayamaz
+    SELECT status, awarded_by INTO v_status, v_req FROM public.proc_rfqs WHERE id = a.subject_id;
+    IF v_status IS DISTINCT FROM 'pending_award' THEN RETURN false; END IF;
+    IF a.approver_user_id IS NULL AND v_req = v_me THEN RETURN false; END IF;
   END IF;
   IF a.approver_user_id IS NOT NULL THEN
     RETURN a.approver_user_id = v_me OR a.approver_user_id = ANY(v_dels);
@@ -521,9 +537,11 @@ CREATE TRIGGER trg_proc_attachment_count AFTER INSERT OR DELETE ON public.proc_a
 CREATE OR REPLACE FUNCTION public.proc_notify(p_user uuid, p_title text, p_message text, p_type text,
                                              p_related_type text, p_related_id uuid, p_link text DEFAULT NULL)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE v_org uuid := public.current_org_id();
+DECLARE v_org uuid;
 BEGIN
   IF p_user IS NULL THEN RETURN; END IF;
+  -- Tedarikçi sayfasından (oturumsuz) gelen çağrılarda kurum, alıcının kurumundan alınır
+  v_org := COALESCE(public.current_org_id(), (SELECT organization_id FROM public.users WHERE id = p_user));
   BEGIN
     EXECUTE 'INSERT INTO public.notifications (organization_id, user_id, title, message, type, related_type, related_id, link)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)'
@@ -546,15 +564,15 @@ DECLARE a record; v_u uuid; v_amount numeric;
 BEGIN
   SELECT * INTO a FROM public.proc_approvals WHERE id = p_approval;
   IF a.id IS NULL THEN RETURN; END IF;
-  SELECT estimated_total INTO v_amount FROM public.proc_requests WHERE id = a.subject_id;
+  IF a.subject_type = 'request' THEN SELECT estimated_total INTO v_amount FROM public.proc_requests WHERE id = a.subject_id; END IF;
   FOR v_u IN
     SELECT x FROM (
       SELECT a.approver_user_id AS x WHERE a.approver_user_id IS NOT NULL
       UNION SELECT h FROM public.proc_role_holders(a.approver_role, v_amount) h WHERE a.approver_user_id IS NULL AND a.approver_role IS NOT NULL
     ) s
   LOOP
-    PERFORM public.proc_notify(v_u, p_title, p_message, 'warning', 'proc_request', a.subject_id, '/procure/onaylar');
-    PERFORM public.proc_notify(d.to_user_id, p_title || ' (vekâleten)', p_message, 'warning', 'proc_request', a.subject_id, '/procure/onaylar')
+    PERFORM public.proc_notify(v_u, p_title, p_message, 'warning', 'proc_' || a.subject_type, a.subject_id, '/procure/onaylar');
+    PERFORM public.proc_notify(d.to_user_id, p_title || ' (vekâleten)', p_message, 'warning', 'proc_' || a.subject_type, a.subject_id, '/procure/onaylar')
        FROM public.proc_delegations d
       WHERE d.from_user_id = v_u AND d.organization_id = a.organization_id AND current_date BETWEEN d.start_date AND d.end_date;
   END LOOP;
@@ -659,7 +677,7 @@ BEGIN
 
   IF v_first IS NOT NULL THEN
     PERFORM public.proc_notify_approvers(v_first, 'Onay bekleyen talep: ' || COALESCE(r.request_no, r.title),
-      r.title || ' · ₺' || to_char(v_amount, 'FM999G999G999G990') || ' (KDV hariç)');
+      r.title || ' · ₺' || public.proc_fmt_tl(v_amount) || ' (KDV hariç)');
   END IF;
 END $$;
 REVOKE EXECUTE ON FUNCTION public.proc_start_approval(uuid) FROM PUBLIC, anon, authenticated;
@@ -746,7 +764,7 @@ BEGIN
   SELECT * INTO r FROM public.proc_requests WHERE id = p_id AND organization_id = public.current_org_id() FOR UPDATE;
   IF r.id IS NULL OR r.status <> 'submitted' THEN RAISE EXCEPTION 'Talep fiyatlandırma aşamasında değil.'; END IF;
   IF COALESCE(r.estimated_total, 0) <= 0 THEN RAISE EXCEPTION 'Önce kalemlere tahmini birim fiyat girin.'; END IF;
-  PERFORM public.proc_event(r.id, 'priced', 'Tahmini tutar girildi: ₺' || to_char(r.estimated_total, 'FM999G999G999G990'));
+  PERFORM public.proc_event(r.id, 'priced', 'Tahmini tutar girildi: ₺' || public.proc_fmt_tl(r.estimated_total));
   PERFORM public.proc_start_approval(r.id);
   RETURN jsonb_build_object('status', 'in_approval');
 END $$;
@@ -760,6 +778,7 @@ BEGIN
   SELECT * INTO a FROM public.proc_approvals WHERE id = p_approval AND organization_id = public.current_org_id() FOR UPDATE;
   IF a.id IS NULL THEN RAISE EXCEPTION 'Onay adımı bulunamadı.'; END IF;
   IF NOT public.proc_can_decide(a.id) THEN RAISE EXCEPTION 'Bu adımı onaylama yetkiniz yok veya sıra sizde değil.'; END IF;
+  IF a.subject_type = 'rfq' THEN RETURN public.proc_rfq_award_decide(a.id, p_approve, p_note); END IF;
   SELECT * INTO r FROM public.proc_requests WHERE id = a.subject_id FOR UPDATE;
 
   -- Vekâleten mi?
@@ -782,7 +801,7 @@ BEGIN
   v_check := public.proc_budget_check(r.id);
   IF v_check ->> 'mode' = 'block' AND v_check ->> 'status' = 'insufficient' AND r.budget_override_by IS NULL THEN
     RAISE EXCEPTION 'Bütçe yetersiz: kullanılabilir ₺%, talep ₺%. Mali işler veya satınalma yöneticisi önce "bütçe aşımını onayla" demeli.',
-      to_char((v_check ->> 'available')::numeric, 'FM999G999G999G990'), to_char(COALESCE(r.estimated_total, 0), 'FM999G999G999G990');
+      public.proc_fmt_tl((v_check ->> 'available')::numeric), public.proc_fmt_tl(COALESCE(r.estimated_total, 0));
   END IF;
 
   UPDATE public.proc_approvals SET status = 'approved', decided_at = now(), decided_by = v_me, delegated_from = v_from,
@@ -795,7 +814,7 @@ BEGIN
    WHERE subject_type = 'request' AND subject_id = r.id AND round = a.round AND status = 'pending' ORDER BY step_no LIMIT 1;
   IF v_next.id IS NOT NULL THEN
     PERFORM public.proc_notify_approvers(v_next.id, 'Onay bekleyen talep: ' || r.request_no,
-      r.title || ' · ₺' || to_char(COALESCE(r.estimated_total, 0), 'FM999G999G999G990') || ' · önceki adım: ' || a.approver_label);
+      r.title || ' · ₺' || public.proc_fmt_tl(COALESCE(r.estimated_total, 0)) || ' · önceki adım: ' || a.approver_label);
     RETURN jsonb_build_object('status', 'in_approval');
   END IF;
 
@@ -972,7 +991,7 @@ CREATE POLICY proc_del ON public.proc_delegations AS RESTRICTIVE FOR DELETE TO a
 -- Bütçe: mali işler/yönetici/satınalma/onaycı ve birim sorumluları okur; mali işler/yönetici yazar
 CREATE POLICY proc_sel ON public.proc_budgets AS RESTRICTIVE FOR SELECT TO authenticated
   USING ((SELECT public.proc_has_role('finance')) OR (SELECT public.proc_has_role('procure_admin')) OR (SELECT public.proc_has_role('buyer'))
-         OR (SELECT public.proc_has_role('approver')) OR cost_center_id = ANY((SELECT public.proc_my_cost_centers())));
+         OR (SELECT public.proc_has_role('approver')) OR cost_center_id = ANY((SELECT public.proc_my_cost_centers())::uuid[]));
 CREATE POLICY proc_ins ON public.proc_budgets AS RESTRICTIVE FOR INSERT TO authenticated
   WITH CHECK ((SELECT public.proc_has_role('finance')) OR (SELECT public.proc_has_role('procure_admin')));
 CREATE POLICY proc_upd ON public.proc_budgets AS RESTRICTIVE FOR UPDATE TO authenticated
