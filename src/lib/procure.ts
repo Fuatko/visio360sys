@@ -91,6 +91,7 @@ export interface ProcPolicy {
   require_receipt_photo: boolean;
   vendor_reevaluation_months: number;
   approved_vendor_list_required: boolean;
+  payment_term_monthly_rate_pct?: number | null;   // 03-tedarikci-rfq.sql ile gelir
   setup_progress: Record<string, 'done' | 'skipped'>;
 }
 export const DEFAULT_POLICY: ProcPolicy = {
@@ -123,7 +124,7 @@ export const SETUP_STEPS = [
   { key: 'categories', title: 'Kategoriler', desc: 'Satınalma kategorileri ve Paraşüt gider kategorisi eşlemesi' },
   { key: 'members', title: 'Kullanıcılar ve roller', desc: 'Talep eden, onaycı, satınalma uzmanı, teslim alan, mali işler' },
   { key: 'approval_matrix', title: 'Yetki matrisi', desc: 'Tutar bandı, kategori ve birime göre onay adımları' },
-  { key: 'vendors', title: 'Tedarikçi havuzu', desc: 'CSV veya Paraşüt tedarikçi carilerinden içe aktarma', phase: 'Faz 1b' },
+  { key: 'vendors', title: 'Tedarikçi havuzu', desc: 'CSV veya Paraşüt tedarikçi carilerinden içe aktarma' },
   { key: 'budget', title: 'Bütçe', desc: 'Masraf merkezi × kategori yıllık bütçe (CSV veya elle)' },
 ] as const;
 
@@ -264,8 +265,9 @@ export async function uploadProcFile(supabase: any, file: File, folder: string, 
   const path = `${org}/${folder}/${Date.now()}-${safeName(file.name)}`;
   const { error } = await supabase.storage.from('procure-files').upload(path, file, { upsert: false, contentType: file.type || undefined });
   if (error) throw new Error(/bucket/i.test(error.message) ? `${PROCURE_SQL_1A} dosyası Supabase'de çalıştırılmamış.` : error.message);
-  const ins = await supabase.from('proc_attachments').insert({ owner_type: owner.type, owner_id: owner.id, storage_path: path, file_name: file.name, mime: file.type || null, size: file.size });
+  const ins = await supabase.from('proc_attachments').insert({ owner_type: owner.type, owner_id: owner.id, storage_path: path, file_name: file.name, mime: file.type || null, size: file.size }).select('id').single();
   if (ins.error) throw new Error(ins.error.message);
+  return ins.data.id as string;
 }
 
 export async function openProcFile(supabase: any, path: string, name: string) {
@@ -279,3 +281,58 @@ export const procError = (e: any, file = PROCURE_SQL_1A) => (isMissingSchema(e) 
 
 // RPC SETOF uuid sonucu (dizi veya nesne dizisi gelebilir)
 export const idList = (data: any): string[] => (Array.isArray(data) ? data.map((x: any) => (typeof x === 'string' ? x : Object.values(x || {})[0] as string)) : []);
+
+// =====================================================================
+// FAZ 1b — Tedarikçi, RFQ, karşılaştırma, ödül
+// =====================================================================
+export const PROCURE_SQL_1B = 'sql/procure/03-tedarikci-rfq.sql';
+
+// Kurum içi kişi adları (proc_org_people: id, ad soyad, e-posta). 03 kurulmamışsa users tablosuna düşer.
+export async function loadPeople(supabase: any): Promise<{ id: string; name: string; email: string }[]> {
+  const { data, error } = await supabase.rpc('proc_org_people');
+  if (!error && Array.isArray(data)) return data;
+  const u = await supabase.from('users').select('id, name, full_name, email');
+  return (u.data || []).map((x: any) => ({ id: x.id, name: x.name || x.full_name || x.email, email: x.email }));
+}
+export const peopleMap = (rows: { id: string; name: string }[]) => Object.fromEntries(rows.map(r => [r.id, r.name])) as Record<string, string>;
+
+export type VendorStatus = 'candidate' | 'approved' | 'conditional' | 'blocked';
+export const VENDOR_STATUS: Record<VendorStatus, { label: string; cls: string }> = {
+  candidate: { label: 'Aday', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+  approved: { label: 'Onaylı', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  conditional: { label: 'Şartlı onaylı', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  blocked: { label: 'Bloke', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+};
+// Tedarikçi belge türleri (geçerlilik tarihi takip edilir)
+export const VENDOR_DOC_TYPES = [
+  'Vergi levhası', 'İmza sirküleri', 'Ticaret sicil gazetesi', 'Faaliyet belgesi', 'Sigorta poliçesi', 'ISO 9001 sertifikası',
+  'Gıda işletme kayıt belgesi', 'Araç ruhsatı / muayene', 'Şoför belgesi / SRC', 'SGK borcu yoktur yazısı', 'Diğer',
+];
+export interface VendorDoc { type: string; label?: string; valid_until?: string | null; attachment_id?: string | null; file_name?: string | null }
+export const docExpired = (d: VendorDoc) => !!d.valid_until && d.valid_until < new Date().toISOString().slice(0, 10);
+export const docExpiringSoon = (d: VendorDoc, days = 30) => !!d.valid_until && !docExpired(d) && new Date(d.valid_until).getTime() - Date.now() < days * 864e5;
+
+export type RfqStatus = 'draft' | 'sent' | 'closed' | 'pending_award' | 'awarded' | 'cancelled';
+export const RFQ_STATUS: Record<RfqStatus, { label: string; cls: string }> = {
+  draft: { label: 'Taslak', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+  sent: { label: 'Teklif bekleniyor', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  closed: { label: 'Değerlendirmede', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  pending_award: { label: 'Ödül onayı bekliyor', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  awarded: { label: 'Sonuçlandı', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  cancelled: { label: 'İptal', cls: 'bg-slate-100 text-slate-400 border-slate-200' },
+};
+
+export const rfqLink = (token: string) => (typeof window === 'undefined' ? '' : `${window.location.origin}/rfq/${token}`);
+// wa.me numarası: başında 0 olan yerel numara → 90...
+export const waNumber = (phone?: string | null) => {
+  const d = (phone || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.startsWith('90')) return d;
+  if (d.startsWith('0')) return '9' + d;
+  return d.length === 10 ? '90' + d : d;
+};
+// İskonto sonrası birim fiyat
+export const unitNet = (l: { unit_price: number | null; discount_pct?: number | null }) => (l.unit_price == null ? null : Number(l.unit_price) * (1 - (Number(l.discount_pct) || 0) / 100));
+// Vade düzeltilmiş fiyat: aylık oranla bugünkü değere indirgenir (uzun vade avantajlı)
+export const termAdjusted = (price: number, days: number | null | undefined, monthlyPct: number | null | undefined) =>
+  !monthlyPct || !days ? price : price / Math.pow(1 + monthlyPct / 100, days / 30);

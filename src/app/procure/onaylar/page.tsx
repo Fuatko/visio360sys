@@ -9,7 +9,7 @@ import ProcureGate, { SqlMissingCard } from '@/components/procure/ProcureGate';
 import { BudgetBox } from '@/components/procure/RequestBits';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { BudgetCheck, PROCURE_SQL_1A, fmtDate, idList, procError, tl } from '@/lib/procure';
+import { BudgetCheck, PROCURE_SQL_1A, fmtDate, idList, loadPeople, peopleMap, procError, tl } from '@/lib/procure';
 import { AlertCircle, Check, CheckCircle2, ChevronRight, Trash2, UserRoundCog, X } from 'lucide-react';
 
 export default function ApprovalsPage() {
@@ -21,7 +21,7 @@ export default function ApprovalsPage() {
   );
 }
 
-type Item = { a: any; r: any; check: BudgetCheck | null };
+type Item = { a: any; r: any; check: BudgetCheck | null; rfq?: any };
 
 function Queue({ isAdmin }: { isAdmin: boolean }) {
   const supabase = createClient();
@@ -41,17 +41,21 @@ function Queue({ isAdmin }: { isAdmin: boolean }) {
     const list = idList(ids.data);
     const [apps, us, cc] = await Promise.all([
       list.length ? supabase.from('proc_approvals').select('*').in('id', list) : Promise.resolve({ data: [] as any[] }),
-      supabase.from('users').select('id, name, full_name, email'),
+      loadPeople(supabase),
       supabase.from('proc_cost_centers').select('id, name'),
     ]);
-    setNames(Object.fromEntries((us.data || []).map((u: any) => [u.id, u.name || u.full_name || u.email])));
+    setNames(peopleMap(us));
     setCcNames(Object.fromEntries((cc.data || []).map((c: any) => [c.id, c.name])));
-    const reqIds = [...new Set((apps.data || []).map((a: any) => a.subject_id))];
+    const reqIds = [...new Set((apps.data || []).filter((a: any) => a.subject_type === 'request').map((a: any) => a.subject_id))] as string[];
+    const rfqIds = [...new Set((apps.data || []).filter((a: any) => a.subject_type === 'rfq').map((a: any) => a.subject_id))] as string[];
+    const rfqs = rfqIds.length ? (await supabase.from('proc_rfqs').select('*').in('id', rfqIds)).data || [] : [];
     const reqs = reqIds.length ? await supabase.from('proc_requests').select('*').in('id', reqIds) : { data: [] as any[] };
     const checks = await Promise.all(reqIds.map(id => supabase.rpc('proc_budget_check', { p_request: id })));
     const checkOf = Object.fromEntries(reqIds.map((id, i) => [id, checks[i].data || null]));
-    setItems((apps.data || []).map((a: any) => ({ a, r: (reqs.data || []).find((r: any) => r.id === a.subject_id), check: checkOf[a.subject_id] }))
-      .filter((x: Item) => x.r).sort((x: Item, y: Item) => (x.r.priority === 'urgent' ? 0 : 1) - (y.r.priority === 'urgent' ? 0 : 1) || String(x.a.created_at).localeCompare(String(y.a.created_at))));
+    setItems((apps.data || []).map((a: any) => a.subject_type === 'rfq'
+        ? { a, r: { id: a.subject_id, created_at: a.created_at }, check: null, rfq: rfqs.find((f: any) => f.id === a.subject_id) }
+        : { a, r: (reqs.data || []).find((r: any) => r.id === a.subject_id), check: checkOf[a.subject_id] })
+      .filter((x: Item) => x.rfq || x.r?.title).sort((x: Item, y: Item) => (x.r.priority === 'urgent' ? 0 : 1) - (y.r.priority === 'urgent' ? 0 : 1) || String(x.a.created_at).localeCompare(String(y.a.created_at))));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -71,7 +75,27 @@ function Queue({ isAdmin }: { isAdmin: boolean }) {
       {items === null ? <div className="p-8 text-center text-sm text-slate-400">Yükleniyor…</div>
         : items.length === 0 ? (
           <Card className="flex flex-col items-center p-10 text-center text-sm text-slate-500"><CheckCircle2 className="mb-2 h-8 w-8 text-emerald-400" />Bekleyen onayınız yok.</Card>
-        ) : items.map(({ a, r, check }) => (
+        ) : items.map(({ a, r, check, rfq }) => rfq ? (
+          <Card key={a.id} className={`p-4 ${done[a.id] ? 'opacity-60' : ''}`}>
+            <Link href={`/procure/rfq/${rfq.id}/karsilastir`} className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-slate-500">{rfq.rfq_no} · Teklif ödülü · {a.approver_label}</p>
+                <p className="truncate font-semibold text-slate-900">{rfq.title}</p>
+                <p className="text-xs text-slate-500">Satınalma: {names[rfq.awarded_by] || '—'} · asgari {rfq.min_quotes_required} teklif gerekiyordu</p>
+              </div>
+              <div className="shrink-0 text-right"><p className="text-lg font-bold text-slate-900">{tl(rfq.award_total)}</p><p className="text-[11px] text-slate-400">KDV hariç</p></div>
+              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-300" />
+            </Link>
+            {rfq.single_source_reason && <p className="mt-2 text-sm text-slate-700">Tek kaynak gerekçesi: “{rfq.single_source_reason}”</p>}
+            {rfq.award_reason && <p className="mt-1 text-sm text-slate-700">Seçim gerekçesi: “{rfq.award_reason}”</p>}
+            {done[a.id] ? <p className="mt-3 text-sm font-medium text-slate-600">{done[a.id]}</p> : (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button disabled={!!busy} onClick={() => decide(a.id, true)} className="flex h-12 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"><Check className="h-5 w-5" />Onayla</button>
+                <button disabled={!!busy} onClick={() => setReject({ id: a.id, note: '' })} className="flex h-12 items-center justify-center gap-1.5 rounded-xl border border-rose-300 bg-white text-sm font-semibold text-rose-700 disabled:opacity-50"><X className="h-5 w-5" />Reddet</button>
+              </div>
+            )}
+          </Card>
+        ) : (
           <Card key={a.id} className={`p-4 ${done[a.id] ? 'opacity-60' : ''}`}>
             <Link href={`/procure/talepler/${r.id}`} className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
@@ -95,7 +119,7 @@ function Queue({ isAdmin }: { isAdmin: boolean }) {
 
       <Delegations isAdmin={isAdmin} names={names} />
 
-      <Modal isOpen={!!reject} onClose={() => setReject(null)} title="Talebi reddet"
+      <Modal isOpen={!!reject} onClose={() => setReject(null)} title="Reddet"
         footer={<><Button variant="secondary" onClick={() => setReject(null)}>Vazgeç</Button><Button variant="danger" disabled={!!busy || !reject?.note.trim()} onClick={async () => { if (reject && await decide(reject.id, false, reject.note)) setReject(null); }}>Reddet</Button></>}>
         <textarea autoFocus className="w-full rounded-lg border border-slate-200 p-2 text-sm" rows={3} value={reject?.note || ''} onChange={e => setReject(x => x && { ...x, note: e.target.value })} placeholder="Red gerekçesi (zorunlu)" />
       </Modal>
@@ -116,10 +140,10 @@ function Delegations({ isAdmin, names }: { isAdmin: boolean; names: Record<strin
   const load = async () => {
     const [d, u] = await Promise.all([
       supabase.from('proc_delegations').select('*').gte('end_date', new Date().toISOString().slice(0, 10)).order('start_date'),
-      profile?.organization_id ? supabase.from('users').select('id, name, full_name, email').eq('organization_id', profile.organization_id) : Promise.resolve({ data: [] as any[] }),
+      loadPeople(supabase),
     ]);
     setRows(d.data || []);
-    setUsers((u.data || []).map((x: any) => ({ id: x.id, name: x.name || x.full_name || x.email })).sort((a: any, b: any) => a.name.localeCompare(b.name, 'tr')));
+    setUsers(u.map(x => ({ id: x.id, name: x.name })).sort((a, b) => a.name.localeCompare(b.name, 'tr')));
   };
   useEffect(() => { load(); }, [profile?.organization_id]);
 
