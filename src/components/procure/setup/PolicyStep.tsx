@@ -6,7 +6,7 @@ import { Save } from 'lucide-react';
 import { Button } from '@/components/ui';
 import MoneyInput from '@/components/MoneyInput';
 import { createClient } from '@/lib/supabase';
-import { MONTHS_TR, ProcPolicy, fiscalYearOf } from '@/lib/procure';
+import { MONTHS_TR, ProcPolicy, THREE_QUOTE_SUGGESTION, fiscalYearOf, tl } from '@/lib/procure';
 
 const inp = 'h-9 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-500';
 
@@ -46,9 +46,11 @@ export default function PolicyStep({ policy, orgId, onSaved }: { policy: ProcPol
           {MONTHS_TR.map((m, i) => <option key={m} value={i + 1}>{m}{i + 1 === 9 ? ' (eğitim yılı)' : i === 0 ? ' (takvim yılı)' : ''}</option>)}
         </select>
       </Row>
-      <Row label="3 teklif eşiği (KDV hariç)" hint="Bu tutarın üstündeki alımlarda en az 3 teklif zorunlu. Boş bırakılırsa kural kapalı.">
+      <Row label="3 teklif eşiği (KDV hariç)" hint={`Bu tutarın üstündeki alımlarda en az 3 teklif zorunlu. Önerilen: ${tl(THREE_QUOTE_SUGGESTION)}. Boş bırakılırsa kural kapalı.`}>
         <div className="flex items-center gap-2"><span className="text-sm text-slate-500">₺</span>
-          <MoneyInput className={inp} value={f.three_quote_threshold} onChange={v => set('three_quote_threshold', v)} placeholder="Örn. 50.000" /></div>
+          <MoneyInput className={inp} value={f.three_quote_threshold} onChange={v => set('three_quote_threshold', v)} placeholder={`Önerilen ${THREE_QUOTE_SUGGESTION.toLocaleString('tr-TR')}`} />
+          {f.three_quote_threshold == null && <button type="button" onClick={() => set('three_quote_threshold', THREE_QUOTE_SUGGESTION)} className="shrink-0 rounded-lg border border-slate-200 px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50">Öneriyi kullan</button>}
+        </div>
       </Row>
       <Row label="Tek kaynak gerekçesi" hint="Yetersiz teklifle ödülde yazılı gerekçe istenir">
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={f.single_source_requires_justification} onChange={e => set('single_source_requires_justification', e.target.checked)} />Gerekçe zorunlu</label>

@@ -122,9 +122,9 @@ export const SETUP_STEPS = [
   { key: 'cost_centers', title: 'Masraf merkezleri', desc: 'Kampüs → kademe → birim yapısı ve birim sorumluları' },
   { key: 'categories', title: 'Kategoriler', desc: 'Satınalma kategorileri ve Paraşüt gider kategorisi eşlemesi' },
   { key: 'members', title: 'Kullanıcılar ve roller', desc: 'Talep eden, onaycı, satınalma uzmanı, teslim alan, mali işler' },
-  { key: 'approval_matrix', title: 'Yetki matrisi', desc: 'Tutar bandı, kategori ve birime göre onay adımları', phase: 'Faz 1a' },
+  { key: 'approval_matrix', title: 'Yetki matrisi', desc: 'Tutar bandı, kategori ve birime göre onay adımları' },
   { key: 'vendors', title: 'Tedarikçi havuzu', desc: 'CSV veya Paraşüt tedarikçi carilerinden içe aktarma', phase: 'Faz 1b' },
-  { key: 'budget', title: 'Bütçe', desc: 'Masraf merkezi × kategori yıllık bütçe (CSV veya elle)', phase: 'Faz 1a' },
+  { key: 'budget', title: 'Bütçe', desc: 'Masraf merkezi × kategori yıllık bütçe (CSV veya elle)' },
 ] as const;
 
 // ---------- CSV ----------
@@ -192,3 +192,90 @@ export function useProcure() {
     isAdmin: roles.includes('procure_admin'),
   };
 }
+
+// =====================================================================
+// FAZ 1a — Talep, onay, bütçe
+// =====================================================================
+export const PROCURE_SQL_1A = 'sql/procure/02-talep-onay-butce.sql';
+
+export const tl = (v: any) => `₺${Math.round(Number(v) || 0).toLocaleString('tr-TR')}`;
+export const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString('tr-TR') : '');
+export const fmtDateTime = (d?: string | null) => (d ? new Date(d).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '');
+
+export type RequestStatus = 'draft' | 'submitted' | 'in_approval' | 'approved' | 'rejected' | 'cancelled' | 'sourcing' | 'ordered' | 'received' | 'closed';
+export const REQUEST_STATUS: Record<RequestStatus, { label: string; cls: string }> = {
+  draft: { label: 'Taslak', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+  submitted: { label: 'Fiyatlandırılacak', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  in_approval: { label: 'Onayda', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  approved: { label: 'Onaylandı', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  rejected: { label: 'Reddedildi', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+  cancelled: { label: 'İptal', cls: 'bg-slate-100 text-slate-400 border-slate-200' },
+  sourcing: { label: 'Teklif toplanıyor', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  ordered: { label: 'Sipariş verildi', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  received: { label: 'Teslim alındı', cls: 'bg-teal-50 text-teal-700 border-teal-200' },
+  closed: { label: 'Kapandı', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+};
+export const APPROVAL_STATUS: Record<string, { label: string; cls: string }> = {
+  pending: { label: 'Bekliyor', cls: 'text-amber-700' },
+  approved: { label: 'Onayladı', cls: 'text-emerald-700' },
+  rejected: { label: 'Reddetti', cls: 'text-rose-700' },
+  skipped: { label: 'Atlandı', cls: 'text-slate-400' },
+};
+
+export const UNITS = ['Adet', 'Kutu', 'Paket', 'Koli', 'Kg', 'Lt', 'Metre', 'Takım', 'Top', 'Saat', 'Gün', 'Ay', 'Hizmet'];
+
+export interface ApprovalRule {
+  id: string; name: string; min_amount: number; max_amount: number | null; category_id: string | null; category_kind: string | null;
+  cost_center_id: string | null; step_no: number; approver_kind: 'cost_center_manager' | 'role' | 'user'; approver_role: string | null;
+  approver_user_id: string | null; approver_label: string | null; applies_to: string; is_active: boolean;
+}
+export const APPROVER_KINDS = [
+  { key: 'cost_center_manager', label: 'Birim sorumlusu' },
+  { key: 'role', label: 'Rol' },
+  { key: 'user', label: 'Belirli kişi' },
+] as const;
+
+// Okul şablon matrisi (§4.2): ≤10.000 birim müdürü; 10.000–100.000 + mali işler; >100.000 + okul müdürü; demirbaş her tutarda + yönetim
+export const SCHOOL_APPROVAL_RULES: Omit<ApprovalRule, 'id' | 'is_active' | 'applies_to' | 'approver_user_id' | 'category_id' | 'cost_center_id'>[] = [
+  { name: '₺10.000\'e kadar', min_amount: 0, max_amount: 10000, category_kind: null, step_no: 1, approver_kind: 'cost_center_manager', approver_role: null, approver_label: 'Birim müdürü' },
+  { name: '₺10.000–100.000', min_amount: 10000, max_amount: 100000, category_kind: null, step_no: 1, approver_kind: 'cost_center_manager', approver_role: null, approver_label: 'Birim müdürü' },
+  { name: '₺10.000–100.000', min_amount: 10000, max_amount: 100000, category_kind: null, step_no: 2, approver_kind: 'role', approver_role: 'finance', approver_label: 'Mali İşler' },
+  { name: '₺100.000 üzeri', min_amount: 100000, max_amount: null, category_kind: null, step_no: 1, approver_kind: 'cost_center_manager', approver_role: null, approver_label: 'Birim müdürü' },
+  { name: '₺100.000 üzeri', min_amount: 100000, max_amount: null, category_kind: null, step_no: 2, approver_kind: 'role', approver_role: 'finance', approver_label: 'Mali İşler' },
+  { name: '₺100.000 üzeri', min_amount: 100000, max_amount: null, category_kind: null, step_no: 3, approver_kind: 'role', approver_role: 'approver', approver_label: 'Okul müdürü / Genel müdür' },
+  { name: 'Demirbaş (her tutar)', min_amount: 0, max_amount: null, category_kind: 'capex', step_no: 4, approver_kind: 'role', approver_role: 'approver', approver_label: 'Yönetim' },
+];
+export const THREE_QUOTE_SUGGESTION = 50000;
+
+export interface BudgetCheck {
+  status: 'ok' | 'insufficient' | 'no_budget'; mode: 'off' | 'warn' | 'block'; fiscal_year: string;
+  amount?: number; pre_commitment?: number; commitment?: number; actual?: number; available?: number; after?: number;
+  request_amount?: number | null; budget_line_id?: string;
+}
+
+// ---------- Dosyalar (procure-files/<kurum>/<klasör>/<ts>-<ad>) ----------
+export const PROC_FILE_MAX_MB = 15;
+const safeName = (s: string) => s.normalize('NFKD').replace(/[^\w.\-]+/g, '_').slice(-80);
+
+export async function uploadProcFile(supabase: any, file: File, folder: string, owner: { type: string; id: string }) {
+  if (file.size > PROC_FILE_MAX_MB * 1024 * 1024) throw new Error(`Dosya ${PROC_FILE_MAX_MB} MB'tan büyük olamaz`);
+  const { data: org, error: e1 } = await supabase.rpc('current_org_id');
+  if (e1 || !org) throw new Error('Kurum bilgisi alınamadı');
+  const path = `${org}/${folder}/${Date.now()}-${safeName(file.name)}`;
+  const { error } = await supabase.storage.from('procure-files').upload(path, file, { upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(/bucket/i.test(error.message) ? `${PROCURE_SQL_1A} dosyası Supabase'de çalıştırılmamış.` : error.message);
+  const ins = await supabase.from('proc_attachments').insert({ owner_type: owner.type, owner_id: owner.id, storage_path: path, file_name: file.name, mime: file.type || null, size: file.size });
+  if (ins.error) throw new Error(ins.error.message);
+}
+
+export async function openProcFile(supabase: any, path: string, name: string) {
+  const { data, error } = await supabase.storage.from('procure-files').createSignedUrl(path, 120, { download: name });
+  if (error || !data) throw new Error(error?.message || 'Dosya açılamadı');
+  window.open(data.signedUrl, '_blank', 'noopener');
+}
+
+// Hata mesajını kullanıcıya göster (SQL kurulmamışsa hangi dosya)
+export const procError = (e: any, file = PROCURE_SQL_1A) => (isMissingSchema(e) ? `Önce ${file} dosyasını Supabase'de çalıştırın.` : e?.message || String(e));
+
+// RPC SETOF uuid sonucu (dizi veya nesne dizisi gelebilir)
+export const idList = (data: any): string[] => (Array.isArray(data) ? data.map((x: any) => (typeof x === 'string' ? x : Object.values(x || {})[0] as string)) : []);

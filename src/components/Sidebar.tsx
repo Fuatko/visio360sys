@@ -51,7 +51,7 @@ import {
   Coffee,
   Plug,
   Scale,
-  BellRing, Grid3x3, ClipboardList, ShoppingBag, Wand2,
+  BellRing, Grid3x3, ClipboardList, ShoppingBag, Wand2, FilePlus2, ListChecks, CheckSquare, PiggyBank,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -130,6 +130,10 @@ const toolItems = [
 // Satınalma (Inspira360 Procure) — yalnızca procure modülü açık kurumlarda
 const procureItems = [
   { href: '/procure', label: 'Satınalma Paneli', icon: ShoppingBag },
+  { href: '/procure/talep/yeni', label: 'Yeni Talep', icon: FilePlus2 },
+  { href: '/procure/talepler', label: 'Talepler', icon: ListChecks },
+  { href: '/procure/onaylar', label: 'Onaylarım', icon: CheckSquare },
+  { href: '/procure/butce', label: 'Bütçe', icon: PiggyBank },
   { href: '/procure/setup', label: 'Kurulum Sihirbazı', icon: Wand2 },
 ];
 
