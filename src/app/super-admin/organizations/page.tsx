@@ -12,6 +12,7 @@ import {
   AlertTriangle, CheckCircle, Clock, TrendingUp
 } from 'lucide-react';
 import { formatMoney } from '@/lib/utils';
+import { MODULES, ModuleKey, refreshModules } from '@/lib/modules';
 
 interface Organization {
   id: string;
@@ -26,6 +27,7 @@ interface Organization {
   max_users: number;
   created_at: string;
   user_count?: number;
+  enabled_modules?: ModuleKey[];  // sql/procure/01-altyapi.sql ile gelir
 }
 
 interface OrgStats {
@@ -54,6 +56,7 @@ export default function SuperAdminOrganizationsPage() {
     subscription_plan: 'basic' as 'basic' | 'pro' | 'enterprise',
     max_users: 10,
     is_active: true,
+    enabled_modules: ['revenue'] as ModuleKey[],
   });
 
   const supabase = createClient();
@@ -160,6 +163,9 @@ export default function SuperAdminOrganizationsPage() {
     }
   };
 
+  // Modül lisansı sütunu kurulu mu? (01-altyapi.sql çalıştırılmamışsa alan gelmez)
+  const modulesReady = organizations.some(o => Array.isArray(o.enabled_modules));
+
   // Slug oluştur
   const generateSlug = (name: string) => {
     return name
@@ -190,6 +196,7 @@ export default function SuperAdminOrganizationsPage() {
             subscription_plan: formData.subscription_plan,
             max_users: formData.max_users,
             is_active: formData.is_active,
+            ...(modulesReady ? { enabled_modules: formData.enabled_modules } : {}),
             updated_at: new Date().toISOString(),
           })
           .eq('id', editingOrg.id);
@@ -206,6 +213,7 @@ export default function SuperAdminOrganizationsPage() {
             subscription_plan: formData.subscription_plan,
             max_users: formData.max_users,
             is_active: formData.is_active,
+            ...(modulesReady ? { enabled_modules: formData.enabled_modules } : {}),
           });
 
         if (error) throw error;
@@ -215,6 +223,7 @@ export default function SuperAdminOrganizationsPage() {
       setEditingOrg(null);
       resetForm();
       fetchOrganizations();
+      refreshModules();
     } catch (err: any) {
       alert('Hata: ' + err.message);
     }
@@ -262,6 +271,7 @@ export default function SuperAdminOrganizationsPage() {
       subscription_plan: 'basic',
       max_users: 10,
       is_active: true,
+      enabled_modules: ['revenue'],
     });
   };
 
@@ -274,6 +284,7 @@ export default function SuperAdminOrganizationsPage() {
       subscription_plan: org.subscription_plan,
       max_users: org.max_users,
       is_active: org.is_active,
+      enabled_modules: org.enabled_modules || ['revenue'],
     });
     setShowModal(true);
   };
@@ -398,6 +409,7 @@ export default function SuperAdminOrganizationsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Kurum</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Plan</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Modüller</th>
                     <th className="px-4 py-3 text-center text-sm font-medium text-slate-600">Kullanıcı</th>
                     <th className="px-4 py-3 text-center text-sm font-medium text-slate-600">Durum</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-slate-600">Oluşturulma</th>
@@ -422,6 +434,14 @@ export default function SuperAdminOrganizationsPage() {
                         <Badge className={planColors[org.subscription_plan]}>
                           {planNames[org.subscription_plan]}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(org.enabled_modules || ['revenue']).map(m => (
+                            <Badge key={m} variant={m === 'procure' ? 'success' : 'primary'}>{MODULES.find(x => x.key === m)?.label || m}</Badge>
+                          ))}
+                          {org.enabled_modules?.length === 0 && <span className="text-xs text-slate-400">Yok</span>}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className="text-sm">
@@ -561,6 +581,35 @@ export default function SuperAdminOrganizationsPage() {
                 min={1}
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Modül Lisansları</label>
+            {modulesReady ? (
+              <div className="space-y-2">
+                {MODULES.map(m => {
+                  const on = formData.enabled_modules.includes(m.key);
+                  return (
+                    <label key={m.key} className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => setFormData({
+                          ...formData,
+                          enabled_modules: on ? formData.enabled_modules.filter(x => x !== m.key) : [...formData.enabled_modules, m.key],
+                        })}
+                        className="mt-0.5 rounded"
+                      />
+                      <span><span className="font-medium text-slate-800">Inspira360 {m.label}</span><span className="block text-xs text-slate-500">{m.desc}</span></span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                <AlertTriangle className="h-4 w-4 shrink-0" />Modül lisansı için <b>sql/procure/01-altyapi.sql</b> dosyasını Supabase'de çalıştırın.
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

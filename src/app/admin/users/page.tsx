@@ -6,6 +6,8 @@ import { Users, Plus, Edit2, Trash2, RefreshCw, Shield, UserCheck, UserX, Mail, 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useModules } from '@/lib/modules';
+import { PROC_ROLES, ProcRole, roleLabel } from '@/lib/procure';
 
 interface User {
   id: string;
@@ -31,7 +33,30 @@ export default function UsersPage() {
   });
 
   const supabase = createClient();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, profile } = useAuth();
+  // Satınalma rolleri (yalnızca Procure lisanslı kurumda)
+  const procureOn = useModules().has('procure');
+  const [procRoles, setProcRoles] = useState<Record<string, ProcRole[]>>({});
+  const [formProcRoles, setFormProcRoles] = useState<ProcRole[]>([]);
+
+  const fetchProcRoles = async () => {
+    const { data, error } = await supabase.from('proc_members').select('user_id, roles, is_active');
+    if (error) { setProcRoles({}); return; }
+    setProcRoles(Object.fromEntries((data || []).filter((m: any) => m.is_active).map((m: any) => [m.user_id, m.roles || []])));
+  };
+  useEffect(() => { if (procureOn) fetchProcRoles(); }, [procureOn]);
+
+  const saveProcRoles = async (userId: string) => {
+    if (!procureOn) return;
+    const prev = procRoles[userId] || [];
+    if (prev.length === 0 && formProcRoles.length === 0) return;
+    const { error } = await supabase.from('proc_members').upsert(
+      { organization_id: profile?.organization_id, user_id: userId, roles: formProcRoles, is_active: true },
+      { onConflict: 'organization_id,user_id' },
+    );
+    if (error) alert('Satınalma rolü kaydedilemedi: ' + error.message);
+    fetchProcRoles();
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -61,9 +86,11 @@ export default function UsersPage() {
         password: '',
         role: user.role || 'user',
       });
+      setFormProcRoles(procRoles[user.id] || []);
     } else {
       setEditingUser(null);
       setFormData({ email: '', full_name: '', password: '', role: 'user' });
+      setFormProcRoles([]);
     }
     setModalOpen(true);
   };
@@ -87,6 +114,7 @@ export default function UsersPage() {
           .eq('id', editingUser.id);
 
         if (error) throw error;
+        await saveProcRoles(editingUser.id);
         alert('Kullanıcı güncellendi');
       } else {
         // Yeni kullanıcı oluştur
@@ -118,6 +146,7 @@ export default function UsersPage() {
             role: formData.role,
             is_active: true,
           });
+          await saveProcRoles(data.user.id);
         }
 
         alert('Kullanıcı oluşturuldu. E-posta doğrulama linki gönderildi.');
@@ -266,6 +295,7 @@ export default function UsersPage() {
                       <th className="px-4 py-3 text-left font-medium">Kullanıcı</th>
                       <th className="px-4 py-3 text-left font-medium">E-posta</th>
                       <th className="px-4 py-3 text-left font-medium">Rol</th>
+                      {procureOn && <th className="px-4 py-3 text-left font-medium">Satınalma</th>}
                       <th className="px-4 py-3 text-left font-medium">Durum</th>
                       <th className="px-4 py-3 text-left font-medium">Kayıt Tarihi</th>
                       <th className="px-4 py-3 text-right font-medium">İşlemler</th>
@@ -288,6 +318,14 @@ export default function UsersPage() {
                             {roleLabels[user.role]?.label || user.role}
                           </Badge>
                         </td>
+                        {procureOn && (
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {(procRoles[user.id] || []).map(r => <Badge key={r} variant="default">{roleLabel(r)}</Badge>)}
+                              {!(procRoles[user.id] || []).length && <span className="text-xs text-slate-400">-</span>}
+                            </div>
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <button
                             onClick={() => toggleUserStatus(user)}
@@ -405,6 +443,24 @@ export default function UsersPage() {
               { value: 'super_admin', label: 'Süper Admin' },
             ]} 
           />
+          {procureOn && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-600">Satınalma rolü</label>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {PROC_ROLES.map(r => {
+                  const on = formProcRoles.includes(r.key);
+                  return (
+                    <label key={r.key} className="flex items-start gap-2 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs cursor-pointer hover:bg-slate-50">
+                      <input type="checkbox" className="mt-0.5" checked={on}
+                        onChange={() => setFormProcRoles(on ? formProcRoles.filter(x => x !== r.key) : [...formProcRoles, r.key])} />
+                      <span><span className="font-medium text-slate-800">{r.label}</span><span className="block text-slate-500">{r.desc}</span></span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-400">Öğretmen ve idari personel için yalnızca "Talep eden" yeterlidir. Admin kullanıcılar otomatik satınalma yöneticisidir.</p>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

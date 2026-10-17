@@ -51,11 +51,12 @@ import {
   Coffee,
   Plug,
   Scale,
-  BellRing, Grid3x3, ClipboardList,
+  BellRing, Grid3x3, ClipboardList, ShoppingBag, Wand2,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useModules } from '@/lib/modules';
 
 // Ana Menü
 const mainItems = [
@@ -125,6 +126,15 @@ const toolItems = [
   { href: '/integrations', label: 'Entegrasyonlar (Paraşüt)', icon: Plug },
   { href: '/settings', label: 'Ayarlar', icon: Settings },
 ];
+
+// Satınalma (Inspira360 Procure) — yalnızca procure modülü açık kurumlarda
+const procureItems = [
+  { href: '/procure', label: 'Satınalma Paneli', icon: ShoppingBag },
+  { href: '/procure/setup', label: 'Kurulum Sihirbazı', icon: Wand2 },
+];
+
+// Modülden bağımsız ortak ekranlar (Revenue lisansı olmayan kurumda da görünür)
+const sharedHrefs = new Set(['/', '/reminders', '/notifications', '/settings']);
 
 const adminItems = [
   { href: '/admin/users', label: 'Kullanıcı Yönetimi', icon: UserCog },
@@ -229,6 +239,7 @@ export default function Sidebar() {
   const [openSections, setOpenSections] = useState({
     main: true,
     sales: true,
+    procure: true,
     plan: false,
     analytics: false,
     tools: false,
@@ -265,6 +276,8 @@ export default function Sidebar() {
       setOpenSections(prev => ({ ...prev, main: true }));
     } else if (salesItems.some(item => item.href === pathname)) {
       setOpenSections(prev => ({ ...prev, sales: true }));
+    } else if (procureItems.some(item => item.href === pathname)) {
+      setOpenSections(prev => ({ ...prev, procure: true }));
     } else if (planItems.some(item => item.href === pathname)) {
       setOpenSections(prev => ({ ...prev, plan: true }));
     } else if (analyticsItems.some(item => item.href === pathname)) {
@@ -280,6 +293,11 @@ export default function Sidebar() {
 
   const isAdmin = userRole === 'admin' || userRole === 'super_admin' || userRole === 'org_admin';
   const isSuperAdmin = userRole === 'super_admin';
+  const modules = useModules();
+  const hasRevenue = modules.has('revenue');
+  const hasProcure = modules.has('procure');
+  // Revenue lisansı yoksa yalnızca ortak ekranlar kalır
+  const rev = (items: typeof mainItems) => (hasRevenue ? items : items.filter(i => sharedHrefs.has(i.href)));
 
   const toggleSection = (section: keyof typeof openSections) => {
     setOpenSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -304,8 +322,8 @@ export default function Sidebar() {
               <TrendingUp className="h-4 w-4 text-white" />
             </div>
             <div>
-              <span className="whitespace-nowrap text-sm font-bold text-slate-800">Inspira360 <span className="text-indigo-600">Revenue</span></span>
-              <p className="text-[10px] text-slate-500">Gelir Operasyonları</p>
+              <span className="whitespace-nowrap text-sm font-bold text-slate-800">Inspira360 <span className="text-indigo-600">{!hasRevenue && hasProcure ? 'Procure' : 'Revenue'}</span></span>
+              <p className="text-[10px] text-slate-500">{!hasRevenue && hasProcure ? 'Satınalma Yönetimi' : 'Gelir Operasyonları'}</p>
             </div>
           </div>
         )}
@@ -323,7 +341,7 @@ export default function Sidebar() {
         <MenuSection
           title="Ana Menü"
           icon={Home}
-          items={mainItems}
+          items={rev(mainItems)}
           isOpen={openSections.main}
           onToggle={() => toggleSection('main')}
           collapsed={collapsed}
@@ -333,7 +351,7 @@ export default function Sidebar() {
         />
 
         {/* Satış */}
-        <MenuSection
+        {hasRevenue && <MenuSection
           title="Satış"
           icon={Briefcase}
           items={salesItems}
@@ -343,10 +361,25 @@ export default function Sidebar() {
           pathname={pathname}
           color="text-emerald-700 bg-emerald-50"
           activeColor="bg-emerald-100 text-emerald-700"
-        />
+        />}
+
+        {/* Satınalma (Procure) */}
+        {hasProcure && (
+          <MenuSection
+            title="Satınalma"
+            icon={ShoppingBag}
+            items={procureItems}
+            isOpen={openSections.procure}
+            onToggle={() => toggleSection('procure')}
+            collapsed={collapsed}
+            pathname={pathname}
+            color="text-teal-700 bg-teal-50"
+            activeColor="bg-teal-100 text-teal-700"
+          />
+        )}
 
         {/* Planlama */}
-        <MenuSection
+        {hasRevenue && <MenuSection
           title="Planlama"
           icon={PieChart}
           items={planItems}
@@ -356,10 +389,10 @@ export default function Sidebar() {
           pathname={pathname}
           color="text-violet-700 bg-violet-50"
           activeColor="bg-violet-100 text-violet-700"
-        />
+        />}
 
         {/* Analitik */}
-        <MenuSection
+        {hasRevenue && <MenuSection
           title="Analitik"
           icon={BarChart3}
           items={analyticsItems}
@@ -369,13 +402,13 @@ export default function Sidebar() {
           pathname={pathname}
           color="text-cyan-700 bg-cyan-50"
           activeColor="bg-cyan-100 text-cyan-700"
-        />
+        />}
 
         {/* Araçlar */}
         <MenuSection
           title="Araçlar"
           icon={Wrench}
-          items={toolItems}
+          items={rev(toolItems)}
           isOpen={openSections.tools}
           onToggle={() => toggleSection('tools')}
           collapsed={collapsed}
