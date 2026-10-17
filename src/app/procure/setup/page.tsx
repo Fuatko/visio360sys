@@ -9,6 +9,8 @@ import PolicyStep from '@/components/procure/setup/PolicyStep';
 import CostCentersStep, { OrgUser } from '@/components/procure/setup/CostCentersStep';
 import CategoriesStep from '@/components/procure/setup/CategoriesStep';
 import MembersStep, { Member } from '@/components/procure/setup/MembersStep';
+import ApprovalRulesStep from '@/components/procure/setup/ApprovalRulesStep';
+import BudgetBoard from '@/components/procure/BudgetBoard';
 import { createClient } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { Category, CostCenter, DEFAULT_POLICY, ProcPolicy, SETUP_STEPS, isMissingSchema } from '@/lib/procure';
@@ -114,10 +116,12 @@ function Wizard() {
         {cur.key === 'cost_centers' && <CostCentersStep rows={d.ccs} users={d.users} onChange={load} />}
         {cur.key === 'categories' && <CategoriesStep rows={d.cats} onChange={load} />}
         {cur.key === 'members' && <MembersStep users={d.users} members={d.members} costCenters={d.ccs} orgId={orgId} onChange={load} />}
+        {cur.key === 'approval_matrix' && <ApprovalRulesStep users={d.users} costCenters={d.ccs} categories={d.cats} />}
+        {cur.key === 'budget' && <BudgetBoard canEdit />}
         {phase && (
           <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-            <div>Bu adım <b>{phase}</b> ile açılacak (talep–onay, tedarikçi ve bütçe tabloları henüz kurulmadı). Şimdilik atlayabilirsiniz; adım açıldığında buradan devam edilir.</div>
+            <div>Bu adım <b>{phase}</b> ile açılacak (tedarikçi tabloları henüz kurulmadı). Şimdilik atlayabilirsiniz; adım açıldığında buradan devam edilir.</div>
           </div>
         )}
 
