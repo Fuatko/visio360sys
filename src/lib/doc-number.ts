@@ -7,6 +7,13 @@ export const DOC_PREFIX = {
   quote: 'TKL',
   order: 'SIP',
   invoice: 'FTR',
+  // Inspira360 Procure (Revenue'daki SAT- serisinden ayrı)
+  proc_request: 'TLP',
+  proc_rfq: 'TTF',
+  proc_order: 'SAS',
+  proc_receipt: 'MKB',
+  proc_contract: 'HSZ',
+  proc_cert: 'HKD',
 } as const;
 
 export type DocType = keyof typeof DOC_PREFIX;
