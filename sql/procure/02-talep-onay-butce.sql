@@ -324,7 +324,7 @@ GRANT EXECUTE ON FUNCTION public.proc_parasut_actuals(text) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.proc_budget_usage(p_budget uuid, p_exclude_request uuid DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
-DECLARE b record; v_pre numeric := 0; v_commit numeric := 0; v_actual numeric := 0;
+DECLARE b record; v_pre numeric := 0; v_opre numeric := 0; v_commit numeric := 0; v_actual numeric := 0;
 BEGIN
   SELECT * INTO b FROM public.proc_budgets WHERE id = p_budget AND organization_id = public.current_org_id();
   IF b.id IS NULL THEN RETURN NULL; END IF;
@@ -332,6 +332,16 @@ BEGIN
   SELECT COALESCE(sum(estimated_total), 0) INTO v_pre FROM public.proc_requests
    WHERE budget_line_id = b.id AND status IN ('approved','sourcing')
      AND (p_exclude_request IS NULL OR id <> p_exclude_request);
+
+  -- Siparişler (04-siparis-kabul.sql): onay bekleyen sipariş ön taahhüt; onaylı/gönderilmiş/teslimdeki siparişin
+  -- faturalanmamış kısmı taahhüt. Talep siparişe dönünce (ordered) kendi ön taahhüdü düşer.
+  IF to_regclass('public.proc_orders') IS NOT NULL THEN
+    EXECUTE 'SELECT COALESCE(sum(subtotal) FILTER (WHERE status IN (''draft'',''pending_approval'')), 0),
+                    COALESCE(sum(GREATEST(subtotal - invoiced_net, 0)) FILTER (WHERE status IN (''approved'',''sent'',''acknowledged'',''partially_received'',''received'')), 0)
+               FROM public.proc_orders WHERE budget_line_id = $1'
+      INTO v_opre, v_commit USING b.id;
+    v_pre := v_pre + v_opre;
+  END IF;
 
   -- Masraf merkezi belli olmayan Paraşüt alışları yalnızca tüm kurum (masraf merkezi boş) satırına düşer
   IF b.cost_center_id IS NULL THEN
@@ -420,6 +430,14 @@ BEGIN
     SELECT status, awarded_by INTO v_status, v_req FROM public.proc_rfqs WHERE id = a.subject_id;
     IF v_status IS DISTINCT FROM 'pending_award' THEN RETURN false; END IF;
     IF a.approver_user_id IS NULL AND v_req = v_me THEN RETURN false; END IF;
+  ELSE
+    -- Sipariş, sözleşme, hakediş: public.proc_<konu>_approval_state(id) → (ok, owner, amount) (04 ve sonrası)
+    BEGIN
+      EXECUTE format('SELECT ok, owner, amount FROM public.proc_%s_approval_state($1)', a.subject_type) INTO v_status, v_req, v_amount USING a.subject_id;
+    EXCEPTION WHEN undefined_function THEN RETURN false;
+    END;
+    IF v_status IS DISTINCT FROM 'true' THEN RETURN false; END IF;
+    IF a.approver_user_id IS NULL AND v_req = v_me THEN RETURN false; END IF;
   END IF;
   IF a.approver_user_id IS NOT NULL THEN
     RETURN a.approver_user_id = v_me OR a.approver_user_id = ANY(v_dels);
@@ -457,13 +475,19 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
                      FROM public.proc_requests r WHERE r.id = p_id AND r.organization_id = public.current_org_id()), false);
 $$;
 CREATE OR REPLACE FUNCTION public.proc_can_see_owner(p_type text, p_id uuid)
-RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT CASE p_type
-    WHEN 'request' THEN public.proc_can_see_request(p_id)
-    WHEN 'request_line' THEN public.proc_can_see_request((SELECT request_id FROM public.proc_request_lines WHERE id = p_id))
-    ELSE public.proc_has_role('buyer') OR public.proc_has_role('finance') OR public.proc_has_role('procure_admin') OR public.proc_has_role('receiver')
-  END;
-$$;
+RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_order uuid; v_ok boolean;
+BEGIN
+  IF p_type = 'request' THEN RETURN public.proc_can_see_request(p_id); END IF;
+  IF p_type = 'request_line' THEN RETURN public.proc_can_see_request((SELECT request_id FROM public.proc_request_lines WHERE id = p_id)); END IF;
+  -- Sipariş ve mal kabul ekleri (04-siparis-kabul.sql): siparişi gören görür
+  IF p_type IN ('order','receipt') AND to_regprocedure('public.proc_order_visible(uuid)') IS NOT NULL THEN
+    IF p_type = 'receipt' THEN EXECUTE 'SELECT order_id FROM public.proc_receipts WHERE id = $1' INTO v_order USING p_id; ELSE v_order := p_id; END IF;
+    EXECUTE 'SELECT public.proc_order_visible($1)' INTO v_ok USING v_order;
+    RETURN COALESCE(v_ok, false);
+  END IF;
+  RETURN public.proc_has_role('buyer') OR public.proc_has_role('finance') OR public.proc_has_role('procure_admin') OR public.proc_has_role('receiver');
+END $$;
 GRANT EXECUTE ON FUNCTION public.proc_delegators(), public.proc_user_has_role(uuid, text, numeric), public.proc_can_decide(uuid),
   public.proc_request_visible(uuid, uuid, uuid), public.proc_can_see_request(uuid), public.proc_request_editable(uuid),
   public.proc_can_see_owner(text, uuid) TO authenticated;
@@ -686,6 +710,14 @@ REVOKE EXECUTE ON FUNCTION public.proc_start_approval(uuid) FROM PUBLIC, anon, a
 CREATE OR REPLACE FUNCTION public.proc_add_step(p_request uuid, p_org uuid, p_round int, p_step int, p_rule uuid, p_kind text,
   p_role text, p_user uuid, p_label text, p_cc uuid, p_requester uuid, p_amount numeric)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  PERFORM public.proc_add_subject_step('request', p_request, p_org, p_round, p_step, p_rule, p_kind, p_role, p_user, p_label, p_cc, p_requester, p_amount);
+END $$;
+
+-- Konudan bağımsız (talep, sipariş, …) onay adımı: onaycıyı çözümle ve ekle. p_requester: kendi kaydını onaylayamayacak kişi
+CREATE OR REPLACE FUNCTION public.proc_add_subject_step(p_subject_type text, p_request uuid, p_org uuid, p_round int, p_step int, p_rule uuid, p_kind text,
+  p_role text, p_user uuid, p_label text, p_cc uuid, p_requester uuid, p_amount numeric)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE v_user uuid; v_role text; v_label text := p_label; v_cc text; v_holders uuid[];
 BEGIN
   IF p_kind = 'user' THEN
@@ -714,9 +746,10 @@ BEGIN
     END IF;
   END IF;
   INSERT INTO public.proc_approvals (organization_id, subject_type, subject_id, round, step_no, rule_id, approver_user_id, approver_role, approver_label)
-  VALUES (p_org, 'request', p_request, p_round, p_step, p_rule, v_user, CASE WHEN v_user IS NULL THEN v_role END, v_label);
+  VALUES (p_org, p_subject_type, p_request, p_round, p_step, p_rule, v_user, CASE WHEN v_user IS NULL THEN v_role END, v_label);
 END $$;
 REVOKE EXECUTE ON FUNCTION public.proc_add_step(uuid, uuid, int, int, uuid, text, text, uuid, text, uuid, uuid, numeric) FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.proc_add_subject_step(text, uuid, uuid, int, int, uuid, text, text, uuid, text, uuid, uuid, numeric) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- 10. İŞ AKIŞI (istemcinin çağırdığı fonksiyonlar)
@@ -779,6 +812,10 @@ BEGIN
   IF a.id IS NULL THEN RAISE EXCEPTION 'Onay adımı bulunamadı.'; END IF;
   IF NOT public.proc_can_decide(a.id) THEN RAISE EXCEPTION 'Bu adımı onaylama yetkiniz yok veya sıra sizde değil.'; END IF;
   IF a.subject_type = 'rfq' THEN RETURN public.proc_rfq_award_decide(a.id, p_approve, p_note); END IF;
+  IF a.subject_type <> 'request' THEN
+    EXECUTE format('SELECT public.proc_%s_approval_decide($1, $2, $3)', a.subject_type) INTO v_check USING a.id, p_approve, p_note;
+    RETURN v_check;
+  END IF;
   SELECT * INTO r FROM public.proc_requests WHERE id = a.subject_id FOR UPDATE;
 
   -- Vekâleten mi?

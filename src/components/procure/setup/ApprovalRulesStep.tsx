@@ -21,13 +21,14 @@ export default function ApprovalRulesStep({ users, costCenters, categories }: { 
   const [edit, setEdit] = useState<Partial<ApprovalRule> | null>(null);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  const [applies, setApplies] = useState<'request' | 'order'>('request');
 
   const load = async () => {
-    const { data, error } = await supabase.from('proc_approval_rules').select('*').eq('applies_to', 'request').order('min_amount').order('step_no');
+    const { data, error } = await supabase.from('proc_approval_rules').select('*').eq('applies_to', applies).order('min_amount').order('step_no');
     if (error) { setMissing(/relation|does not exist/i.test(error.message)); setRows([]); return; }
     setRows((data || []).map((r: any) => ({ ...r, min_amount: +r.min_amount, max_amount: r.max_amount == null ? null : +r.max_amount })));
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [applies]);
 
   // Aynı band + kapsam kuralları bir grup = bir onay zinciri
   const groups = useMemo(() => {
@@ -54,7 +55,7 @@ export default function ApprovalRulesStep({ users, costCenters, categories }: { 
       cost_center_id: edit.cost_center_id || null, step_no: edit.step_no || 1, approver_kind: edit.approver_kind || 'cost_center_manager',
       approver_role: edit.approver_kind === 'role' ? edit.approver_role || 'approver' : null,
       approver_user_id: edit.approver_kind === 'user' ? edit.approver_user_id || null : null,
-      approver_label: edit.approver_label?.trim() || null, is_active: edit.is_active ?? true, applies_to: 'request',
+      approver_label: edit.approver_label?.trim() || null, is_active: edit.is_active ?? true, applies_to: applies,
     };
     const { error } = edit.id ? await supabase.from('proc_approval_rules').update(row).eq('id', edit.id) : await supabase.from('proc_approval_rules').insert(row);
     setBusy(false);
@@ -69,9 +70,13 @@ export default function ApprovalRulesStep({ users, costCenters, categories }: { 
 
   return (
     <div className="space-y-3">
+      <div className="flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+        {([['request', 'Talep onayı'], ['order', 'Sipariş onayı']] as const).map(([k, t]) => <button key={k} onClick={() => setApplies(k)} className={`flex-1 rounded-md px-3 py-1.5 ${applies === k ? 'bg-[#1B3A5C] text-white' : 'text-slate-600'}`}>{t}</button>)}
+      </div>
+      {applies === 'order' && <p className="text-xs text-slate-500">Sipariş onayı opsiyoneldir: kural yoksa RFQ ödülünden oluşan sipariş doğrudan onaylanır (talep onayı yeterli sayılır). Tutar siparişin KDV hariç toplamıdır; siparişi veren satınalma uzmanı kendi siparişini onaylayamaz.</p>}
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" onClick={() => setEdit({ min_amount: 0, max_amount: null, step_no: 1, approver_kind: 'cost_center_manager', is_active: true })}><Plus className="h-3.5 w-3.5" />Yeni kural</Button>
-        <Button size="sm" variant="secondary" disabled={busy} onClick={loadTemplate}><Wand2 className="h-3.5 w-3.5" />Okul şablonunu yükle</Button>
+        {applies === 'request' && <Button size="sm" variant="secondary" disabled={busy} onClick={loadTemplate}><Wand2 className="h-3.5 w-3.5" />Okul şablonunu yükle</Button>}
         {msg && <span className="text-sm text-slate-700">{msg}</span>}
       </div>
       <p className="text-xs text-slate-500">Talep gönderildiğinde tutar (KDV hariç), kategori ve birime uyan kurallardan adımlar sırayla oluşur. Bir adım numarasına birden fazla kural uyarsa en özel olan (birim/kategori tanımlı) seçilir. Aynı kişi ardışık iki adımda çıkarsa ikinci adım atlanır. Kural yoksa talep birim sorumlusuna gider. Talep eden kendi talebini onaylamaz; birim sorumlusu kendisiyse bir üst birimin sorumlusuna gider. Tutar bandı: alt sınırın üstü, üst sınır dahil.</p>

@@ -336,3 +336,32 @@ export const unitNet = (l: { unit_price: number | null; discount_pct?: number | 
 // Vade düzeltilmiş fiyat: aylık oranla bugünkü değere indirgenir (uzun vade avantajlı)
 export const termAdjusted = (price: number, days: number | null | undefined, monthlyPct: number | null | undefined) =>
   !monthlyPct || !days ? price : price / Math.pow(1 + monthlyPct / 100, days / 30);
+
+// =====================================================================
+// FAZ 1c — Sipariş, tedarikçi onayı, mal kabul, uygunsuzluk
+// =====================================================================
+export const PROCURE_SQL_1C = 'sql/procure/04-siparis-kabul.sql';
+
+export type OrderStatus = 'draft' | 'pending_approval' | 'approved' | 'sent' | 'acknowledged' | 'partially_received' | 'received' | 'invoiced' | 'closed' | 'cancelled';
+export const ORDER_STATUS: Record<OrderStatus, { label: string; cls: string }> = {
+  draft: { label: 'Taslak', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+  pending_approval: { label: 'Onay bekliyor', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  approved: { label: 'Onaylandı · gönderilecek', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  sent: { label: 'Tedarikçiye gönderildi', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  acknowledged: { label: 'Tedarikçi onayladı', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  partially_received: { label: 'Kısmi teslim', cls: 'bg-teal-50 text-teal-700 border-teal-200' },
+  received: { label: 'Teslim alındı', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  invoiced: { label: 'Faturalandı', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  closed: { label: 'Kapandı', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+  cancelled: { label: 'İptal', cls: 'bg-slate-100 text-slate-400 border-slate-200' },
+};
+// Teslim alınabilir sipariş durumları
+export const RECEIVABLE: OrderStatus[] = ['approved', 'sent', 'acknowledged', 'partially_received'];
+export const orderLink = (token: string) => (typeof window === 'undefined' ? '' : `${window.location.origin}/po/${token}`);
+
+export const ISSUE_SEVERITY: Record<string, { label: string; cls: string }> = {
+  minor: { label: 'Küçük', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+  major: { label: 'Büyük', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  critical: { label: 'Kritik', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+};
+export const ISSUE_STATUS: Record<string, string> = { open: 'Açık', action: 'Düzeltici faaliyette', verification: 'Etkinlik kontrolünde', closed: 'Kapandı' };

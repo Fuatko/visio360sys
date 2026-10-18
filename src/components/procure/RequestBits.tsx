@@ -2,7 +2,7 @@
 
 // Talep ekranlarının ortak parçaları: durum rozeti, bütçe kutusu
 import { AlertTriangle, CheckCircle2, Wallet } from 'lucide-react';
-import { BudgetCheck, REQUEST_STATUS, RFQ_STATUS, RequestStatus, RfqStatus, VENDOR_STATUS, VendorStatus, tl } from '@/lib/procure';
+import { BudgetCheck, ORDER_STATUS, OrderStatus, REQUEST_STATUS, RFQ_STATUS, RequestStatus, RfqStatus, VENDOR_STATUS, VendorStatus, tl } from '@/lib/procure';
 
 export function StatusBadge({ status }: { status: string }) {
   const s = REQUEST_STATUS[status as RequestStatus] || { label: status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
@@ -16,6 +16,11 @@ export function VendorStatusBadge({ status }: { status: string }) {
 
 export function RfqStatusBadge({ status }: { status: string }) {
   const s = RFQ_STATUS[status as RfqStatus] || { label: status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.cls}`}>{s.label}</span>;
+}
+
+export function OrderStatusBadge({ status }: { status: string }) {
+  const s = ORDER_STATUS[status as OrderStatus] || { label: status, cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   return <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium ${s.cls}`}>{s.label}</span>;
 }
 

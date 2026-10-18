@@ -12,7 +12,7 @@ import { useAuth } from '@/lib/auth-context';
 import { fetchAll } from '@/lib/fetch-all';
 import { MONTHS_TR, PROCURE_SQL_1A, SETUP_STEPS, fiscalYearOf, fmtDate, idList, roleLabel, tl, useProcure } from '@/lib/procure';
 import { SqlMissingCard } from '@/components/procure/ProcureGate';
-import { AlertCircle, ArrowRight, CheckSquare, FilePlus2, PiggyBank, Search, Wand2 } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckSquare, FilePlus2, PackageCheck, PiggyBank, Search, ShoppingCart, Wand2 } from 'lucide-react';
 
 export default function ProcurePage() {
   return (
@@ -45,13 +45,17 @@ function Panel({ p }: { p: ReturnType<typeof useProcure> }) {
         isFin ? supabase.rpc('proc_parasut_actuals', { p_fy: fy }) : Promise.resolve({ data: [] as any[] }),
       ]);
       const rfqs = isBuyer ? (await supabase.from('proc_rfqs').select('id, rfq_no, title, status, deadline').in('status', ['sent', 'closed', 'pending_award']).order('deadline')).data || [] : [];
+      // Siparişler (04 kurulmadıysa boş): satınalma tümünü, teslim alan kendi birimininkini görür (RLS)
+      const isReceiver = p.roles.includes('receiver');
+      const ords = (isBuyer || isReceiver) ? (await supabase.from('proc_orders').select('id, order_no, status, expected_date, ack_expected_date, subtotal, vendor:vendor_id(name)')
+        .in('status', ['draft', 'pending_approval', 'approved', 'sent', 'acknowledged', 'partially_received'])).data || [] : [];
       const pendIds = idList(pend.data);
       const pendReqs = pendIds.length ? await supabase.from('proc_approvals').select('subject_id').in('id', pendIds) : { data: [] as any[] };
       const pendRows = (pendReqs.data || []).length ? (await supabase.from('proc_requests').select('id, request_no, title, estimated_total, priority').in('id', (pendReqs.data || []).map((x: any) => x.subject_id))).data || [] : [];
       const fm = ((new Date().getMonth() + 1 - start + 12) % 12) + 1;
       setS({
         policy: pol.data, fy, start, missing: !!mine.error && /relation|does not exist/i.test(mine.error.message),
-        mine: mine.data || [], pend: pendRows, open, rfqs,
+        mine: mine.data || [], pend: pendRows, open, rfqs, ords, isReceiver,
         budget: budget.data || [], monthSpend: ((actual as any).data || []).filter((x: any) => x.fiscal_month === fm).reduce((a: number, x: any) => a + +x.amount, 0),
       });
     })();
@@ -115,9 +119,29 @@ function Panel({ p }: { p: ReturnType<typeof useProcure> }) {
                 <span className={`shrink-0 text-xs ${f.status === 'sent' && f.deadline && new Date(f.deadline) < new Date() ? 'text-rose-600' : 'text-slate-400'}`}>{f.status === 'sent' ? `son tarih ${fmtDate(f.deadline)}` : f.status === 'pending_award' ? 'ödül onayı bekliyor' : 'değerlendirmede'}</span></Link></li>
             ))}</ul>}
           </div>
-          <p className="mt-2 text-[11px] text-slate-400">Sipariş ve teslimat takibi sonraki fazda bu bölüme eklenecek.</p>
+
         </Card>
       )}
+
+      {(isBuyer || s.isReceiver) && s.ords.length > 0 && (() => {
+        const today = new Date().toISOString().slice(0, 10);
+        const late = s.ords.filter((o: any) => ['approved', 'sent', 'acknowledged', 'partially_received'].includes(o.status) && (o.ack_expected_date || o.expected_date) && (o.ack_expected_date || o.expected_date) < today);
+        const toSend = s.ords.filter((o: any) => o.status === 'approved');
+        const toReceive = s.ords.filter((o: any) => ['approved', 'sent', 'acknowledged', 'partially_received'].includes(o.status));
+        return (
+          <Card className="p-4">
+            <div className="mb-2 flex items-center justify-between"><p className="flex items-center gap-1.5 font-semibold text-slate-800"><ShoppingCart className="h-4 w-4" />Siparişler ve teslimatlar</p><Link href="/procure/siparisler" className="text-sm text-blue-700">Tümü →</Link></div>
+            <div className="grid gap-2 text-sm sm:grid-cols-4">
+              {isBuyer && <div><p className="text-xs text-slate-500">Onay bekleyen</p><p className="text-lg font-bold">{s.ords.filter((o: any) => o.status === 'pending_approval').length}</p></div>}
+              {isBuyer && <div><p className="text-xs text-slate-500">Tedarikçiye gönderilecek</p><p className="text-lg font-bold">{toSend.length}</p></div>}
+              <div><p className="text-xs text-slate-500">Teslim beklenen</p><p className="text-lg font-bold">{toReceive.length}</p></div>
+              <div><p className="text-xs text-slate-500">Geciken teslimat</p><p className={`text-lg font-bold ${late.length ? 'text-rose-600' : ''}`}>{late.length}</p></div>
+            </div>
+            {late.length > 0 && <ul className="mt-2 space-y-1">{late.slice(0, 5).map((o: any) => <li key={o.id}><Link href={`/procure/siparisler/${o.id}`} className="flex gap-2 text-sm text-slate-700 hover:text-blue-700"><span className="min-w-0 flex-1 truncate">{o.order_no} · {o.vendor?.name}</span><span className="shrink-0 text-xs text-rose-600">teslim {fmtDate(o.ack_expected_date || o.expected_date)}</span></Link></li>)}</ul>}
+            {s.isReceiver && toReceive.length > 0 && <Link href="/procure/kabul" className="mt-3 inline-flex h-11 items-center gap-2 rounded-xl bg-[#10B981] px-4 text-sm font-semibold text-white"><PackageCheck className="h-4 w-4" />Teslim al</Link>}
+          </Card>
+        );
+      })()}
 
       {isFin && (
         <div className="grid gap-3 sm:grid-cols-3">

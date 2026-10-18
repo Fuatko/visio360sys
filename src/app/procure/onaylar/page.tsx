@@ -21,7 +21,7 @@ export default function ApprovalsPage() {
   );
 }
 
-type Item = { a: any; r: any; check: BudgetCheck | null; rfq?: any };
+type Item = { a: any; r: any; check: BudgetCheck | null; rfq?: any; order?: any };
 
 function Queue({ isAdmin }: { isAdmin: boolean }) {
   const supabase = createClient();
@@ -49,13 +49,17 @@ function Queue({ isAdmin }: { isAdmin: boolean }) {
     const reqIds = [...new Set((apps.data || []).filter((a: any) => a.subject_type === 'request').map((a: any) => a.subject_id))] as string[];
     const rfqIds = [...new Set((apps.data || []).filter((a: any) => a.subject_type === 'rfq').map((a: any) => a.subject_id))] as string[];
     const rfqs = rfqIds.length ? (await supabase.from('proc_rfqs').select('*').in('id', rfqIds)).data || [] : [];
+    const orderIds = [...new Set((apps.data || []).filter((a: any) => a.subject_type === 'order').map((a: any) => a.subject_id))] as string[];
+    const orders = orderIds.length ? (await supabase.from('proc_orders').select('*, vendor:vendor_id(name)').in('id', orderIds)).data || [] : [];
     const reqs = reqIds.length ? await supabase.from('proc_requests').select('*').in('id', reqIds) : { data: [] as any[] };
     const checks = await Promise.all(reqIds.map(id => supabase.rpc('proc_budget_check', { p_request: id })));
     const checkOf = Object.fromEntries(reqIds.map((id, i) => [id, checks[i].data || null]));
-    setItems((apps.data || []).map((a: any) => a.subject_type === 'rfq'
+    setItems((apps.data || []).map((a: any) => a.subject_type === 'order'
+        ? { a, r: { id: a.subject_id, created_at: a.created_at }, check: null, order: orders.find((o: any) => o.id === a.subject_id) }
+        : a.subject_type === 'rfq'
         ? { a, r: { id: a.subject_id, created_at: a.created_at }, check: null, rfq: rfqs.find((f: any) => f.id === a.subject_id) }
         : { a, r: (reqs.data || []).find((r: any) => r.id === a.subject_id), check: checkOf[a.subject_id] })
-      .filter((x: Item) => x.rfq || x.r?.title).sort((x: Item, y: Item) => (x.r.priority === 'urgent' ? 0 : 1) - (y.r.priority === 'urgent' ? 0 : 1) || String(x.a.created_at).localeCompare(String(y.a.created_at))));
+      .filter((x: Item) => x.rfq || x.order || x.r?.title).sort((x: Item, y: Item) => (x.r.priority === 'urgent' ? 0 : 1) - (y.r.priority === 'urgent' ? 0 : 1) || String(x.a.created_at).localeCompare(String(y.a.created_at))));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -75,7 +79,25 @@ function Queue({ isAdmin }: { isAdmin: boolean }) {
       {items === null ? <div className="p-8 text-center text-sm text-slate-400">Yükleniyor…</div>
         : items.length === 0 ? (
           <Card className="flex flex-col items-center p-10 text-center text-sm text-slate-500"><CheckCircle2 className="mb-2 h-8 w-8 text-emerald-400" />Bekleyen onayınız yok.</Card>
-        ) : items.map(({ a, r, check, rfq }) => rfq ? (
+        ) : items.map(({ a, r, check, rfq, order }) => order ? (
+          <Card key={a.id} className={`p-4 ${done[a.id] ? 'opacity-60' : ''}`}>
+            <Link href={`/procure/siparisler/${order.id}`} className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-slate-500">{order.order_no} · Sipariş onayı · {a.approver_label}</p>
+                <p className="truncate font-semibold text-slate-900">{order.vendor?.name}</p>
+                <p className="text-xs text-slate-500">Satınalma: {names[order.buyer_id] || '—'} · teslim {fmtDate(order.expected_date) || '—'}</p>
+              </div>
+              <div className="shrink-0 text-right"><p className="text-lg font-bold text-slate-900">{tl(order.subtotal)}</p><p className="text-[11px] text-slate-400">KDV hariç</p></div>
+              <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-300" />
+            </Link>
+            {done[a.id] ? <p className="mt-3 text-sm font-medium text-slate-600">{done[a.id]}</p> : (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button disabled={!!busy} onClick={() => decide(a.id, true)} className="flex h-12 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"><Check className="h-5 w-5" />Onayla</button>
+                <button disabled={!!busy} onClick={() => setReject({ id: a.id, note: '' })} className="flex h-12 items-center justify-center gap-1.5 rounded-xl border border-rose-300 bg-white text-sm font-semibold text-rose-700 disabled:opacity-50"><X className="h-5 w-5" />Reddet</button>
+              </div>
+            )}
+          </Card>
+        ) : rfq ? (
           <Card key={a.id} className={`p-4 ${done[a.id] ? 'opacity-60' : ''}`}>
             <Link href={`/procure/rfq/${rfq.id}/karsilastir`} className="flex items-start gap-2">
               <div className="min-w-0 flex-1">

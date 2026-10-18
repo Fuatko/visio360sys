@@ -14,7 +14,7 @@ import { fetchAll } from '@/lib/fetch-all';
 import {
   PROCURE_SQL_1B, UNITS, fmtDateTime, loadPeople, openProcFile, peopleMap, procError, rfqLink, tl, useProcure, waNumber,
 } from '@/lib/procure';
-import { ArrowLeft, Ban, Copy, ExternalLink, Lock, MessageCircle, Paperclip, PencilLine, Plus, Printer, Save, Scale, Send, Square, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Copy, ExternalLink, Lock, MessageCircle, Paperclip, PencilLine, Plus, Printer, Save, Scale, Send, ShoppingCart, Square, Trash2 } from 'lucide-react';
 
 export default function RfqDetailPage() {
   return (
@@ -60,7 +60,8 @@ function RfqDetail({ p }: { p: ReturnType<typeof useProcure> }) {
       rvIds.length ? supabase.from('proc_quotes').select('*').in('rfq_vendor_id', rvIds).eq('is_current', true) : Promise.resolve({ data: [] as any[] }),
       rvIds.length ? supabase.from('proc_attachments').select('*').eq('owner_type', 'quote').in('owner_id', rvIds) : Promise.resolve({ data: [] as any[] }),
     ]);
-    setD({ r: r.data, lines: ls.data || [], vendors: vs.data || [], reqs: reqs.data || [], org: org.data?.name || '', policy: pol.data, names: peopleMap(people),
+    const orders = (await supabase.from('proc_orders').select('id, order_no, status').eq('rfq_id', id).neq('status', 'cancelled')).data || [];
+    setD({ orders, r: r.data, lines: ls.data || [], vendors: vs.data || [], reqs: reqs.data || [], org: org.data?.name || '', policy: pol.data, names: peopleMap(people),
       pool: vendors, quotes: qs.data || [], atts: atts.data || [] });
     setTerms({ title: r.data.title, deadline: toLocalInput(r.data.deadline), delivery_terms: r.data.delivery_terms || '', payment_terms: r.data.payment_terms || '', notes_to_vendors: r.data.notes_to_vendors || '' });
     setLines(null);
@@ -146,6 +147,8 @@ function RfqDetail({ p }: { p: ReturnType<typeof useProcure> }) {
           {canEdit && r.status === 'draft' && <Button size="sm" disabled={busy} onClick={() => run(() => supabase.rpc('proc_rfq_send', { p_id: r.id }), 'RFQ gönderildi. Bağlantıları tedarikçilere iletin.')}><Send className="h-3.5 w-3.5" />Gönder (bağlantıları aç)</Button>}
           {['sent', 'closed', 'pending_award', 'awarded'].includes(r.status) && <Link href={`/procure/rfq/${r.id}/karsilastir`} className="inline-flex items-center gap-1.5 rounded-lg bg-[#1B3A5C] px-3 py-1.5 text-xs font-medium text-white"><Scale className="h-3.5 w-3.5" />Karşılaştır ve ödül ver</Link>}
           {canEdit && r.status === 'sent' && <Button size="sm" variant="secondary" disabled={busy} onClick={() => { if (confirm('Teklif alımı kapatılsın mı? Tedarikçiler artık teklif güncelleyemez.')) run(() => supabase.rpc('proc_rfq_close', { p_id: r.id }), 'Teklif alımı kapatıldı.'); }}><Square className="h-3.5 w-3.5" />Teklif alımını kapat</Button>}
+          {canEdit && r.status === 'awarded' && d.orders.length === 0 && <Button size="sm" disabled={busy} onClick={async () => { setBusy(true); setMsg(''); const { data, error } = await supabase.rpc('proc_order_from_rfq', { p_rfq: r.id }); setBusy(false); if (error) { setMsg(procError(error, PROCURE_SQL_1B)); return; } const list = (data || []) as any[]; window.location.href = list.length === 1 ? `/procure/siparisler/${list[0].id}` : '/procure/siparisler'; }}><ShoppingCart className="h-3.5 w-3.5" />Sipariş oluştur</Button>}
+          {d.orders.map((o: any) => <Link key={o.id} href={`/procure/siparisler/${o.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700"><ShoppingCart className="h-3.5 w-3.5" />{o.order_no}</Link>)}
           {['awarded', 'pending_award'].includes(r.status) && <a href={`/procure/rfq/${r.id}/print`} target="_blank" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700"><Printer className="h-3.5 w-3.5" />Karar tutanağı (PDF)</a>}
           {canEdit && !['awarded', 'cancelled'].includes(r.status) && <Button size="sm" variant="ghost" onClick={() => setCancel('')}><Ban className="h-3.5 w-3.5" />İptal</Button>}
         </div>

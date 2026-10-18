@@ -9,7 +9,7 @@ import { Menu } from 'lucide-react';
 
 const publicRoutes = ['/login', '/register', '/portal/kayit'];
 // Giriş gerektirmeyen dış sayfalar (müşteriye giden online teklif)
-const isExternal = (p: string) => p.startsWith('/q/') || p.startsWith('/s/') || p.startsWith('/izin/') || p.startsWith('/f/') || p.startsWith('/rfq/');
+const isExternal = (p: string) => p.startsWith('/q/') || p.startsWith('/s/') || p.startsWith('/izin/') || p.startsWith('/f/') || p.startsWith('/rfq/') || p.startsWith('/po/');
 
 // Bayi portalı kullanıcısı mı? (oturum başına bir kez sorulur)
 let dealerCache: { uid: string; dealer: boolean } | null = null;

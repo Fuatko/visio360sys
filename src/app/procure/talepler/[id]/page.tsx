@@ -15,7 +15,7 @@ import {
   APPROVAL_STATUS, BudgetCheck, Category, CostCenter, PROCURE_SQL_1A, UNITS, fmtDate, fmtDateTime, idList, openProcFile, procError, tl,
   loadPeople, peopleMap, uploadProcFile, useProcure,
 } from '@/lib/procure';
-import { AlertCircle, ArrowLeft, Ban, Camera, Check, ChevronDown, Edit2, MessageSquare, Paperclip, Plus, Scale, Send, ShieldAlert, Trash2, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Ban, Camera, Check, ChevronDown, Edit2, MessageSquare, Paperclip, Plus, Scale, Send, ShieldAlert, ShoppingCart, Trash2, X } from 'lucide-react';
 
 type Line = { id?: string; description: string; quantity: number; unit: string; est_unit_price: number | null; est_total?: number | null; spec_note?: string | null; product_id?: string | null };
 
@@ -65,8 +65,9 @@ function Detail({ p }: { p: ReturnType<typeof useProcure> }) {
     ]);
     // Bağlı RFQ'lar (03 kurulmadıysa veya görme yetkisi yoksa boş)
     const rfqs = (await supabase.from('proc_rfqs').select('id, rfq_no, status').contains('request_ids', [id])).data || [];
+    const orders = (await supabase.from('proc_orders').select('id, order_no, status').contains('request_ids', [id]).neq('status', 'cancelled')).data || [];
     setD({
-      rfqs, r: r.data, lines: lines.data || [], apps: apps.data || [], evs: evs.data || [], atts: atts.data || [],
+      rfqs, orders, r: r.data, lines: lines.data || [], apps: apps.data || [], evs: evs.data || [], atts: atts.data || [],
       check: (check.data || null) as BudgetCheck | null, myPending: idList(mine.data), editable: editable.data === true,
       ccs: (ccs.data || []) as CostCenter[], cats: (cats.data || []) as Category[],
       names: peopleMap(us),
@@ -161,6 +162,7 @@ function Detail({ p }: { p: ReturnType<typeof useProcure> }) {
           {canPrice && !edit && <Button size="sm" disabled={busy || !r.estimated_total} onClick={() => run(() => supabase.rpc('proc_request_price', { p_id: r.id }), 'Onaya gönderildi.')}><Send className="h-3.5 w-3.5" />Onaya gönder</Button>}
           {r.status === 'approved' && (p.hasRole('buyer') || p.isAdmin) && !edit && <Button size="sm" disabled={busy} onClick={async () => { setBusy(true); const { data, error } = await supabase.rpc('proc_rfq_create', { p_request_ids: [r.id], p_title: null }); setBusy(false); if (error) setMsg(procError(error)); else window.location.href = `/procure/rfq/${data}`; }}><Scale className="h-3.5 w-3.5" />Teklif topla (RFQ)</Button>}
           {d.rfqs?.map((f: any) => <Link key={f.id} href={`/procure/rfq/${f.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"><Scale className="h-3.5 w-3.5" />{f.rfq_no}</Link>)}
+          {d.orders?.map((o: any) => <Link key={o.id} href={`/procure/siparisler/${o.id}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"><ShoppingCart className="h-3.5 w-3.5" />{o.order_no}</Link>)}
           {canCancel && !edit && <Button size="sm" variant="ghost" onClick={() => setCancel('')}><Ban className="h-3.5 w-3.5" />İptal et</Button>}
           {r.status === 'draft' && isMine && !r.request_no && !edit && <Button size="sm" variant="ghost" onClick={async () => { if (confirm('Taslak silinsin mi?')) { const x = await supabase.from('proc_requests').delete().eq('id', r.id); if (x.error) setMsg(x.error.message); else window.location.href = '/procure/talepler'; } }}><Trash2 className="h-3.5 w-3.5" />Sil</Button>}
         </div>

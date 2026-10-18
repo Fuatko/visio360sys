@@ -8,6 +8,7 @@ import Header from '@/components/Header';
 import { Card, Button, Modal } from '@/components/ui';
 import ProcureGate, { SqlMissingCard } from '@/components/procure/ProcureGate';
 import { RfqStatusBadge, VendorStatusBadge } from '@/components/procure/RequestBits';
+import IssuePanel from '@/components/procure/IssuePanel';
 import { createClient } from '@/lib/supabase';
 import {
   Category, PROCURE_SQL_1B, VENDOR_DOC_TYPES, VENDOR_STATUS, VendorDoc, VendorStatus, docExpired, docExpiringSoon, fmtDate, openProcFile, procError, tl, uploadProcFile,
@@ -18,12 +19,12 @@ export default function VendorDetailPage() {
   return (
     <div>
       <Header title="Tedarikçi" subtitle="Satınalma" />
-      <ProcureGate>{p => <VendorDetail canEdit={p.hasRole('buyer') || p.isAdmin} />}</ProcureGate>
+      <ProcureGate>{p => <VendorDetail canEdit={p.hasRole('buyer') || p.isAdmin} canOpenIssue={p.hasRole('buyer') || p.isAdmin || p.hasRole('receiver')} />}</ProcureGate>
     </div>
   );
 }
 
-function VendorDetail({ canEdit }: { canEdit: boolean }) {
+function VendorDetail({ canEdit, canOpenIssue }: { canEdit: boolean; canOpenIssue: boolean }) {
   const { id } = useParams<{ id: string }>();
   const supabase = createClient();
   const [v, setV] = useState<any>(undefined);
@@ -159,6 +160,8 @@ function VendorDetail({ canEdit }: { canEdit: boolean }) {
           ))}</ul>
         )}
       </Card>
+
+      <IssuePanel vendorId={id} canManage={canEdit} canOpen={canOpenIssue} />
 
       <Modal isOpen={!!doc} onClose={() => setDoc(null)} title="Belge ekle"
         footer={<><Button variant="secondary" onClick={() => setDoc(null)}>Vazgeç</Button><Button disabled={busy} onClick={addDoc}>Ekle</Button></>}>
