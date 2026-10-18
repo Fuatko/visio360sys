@@ -1,14 +1,20 @@
 'use client';
 
 // Adım 4 — Kullanıcılar ve satınalma rolleri (proc_members)
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Edit2, Users } from 'lucide-react';
+import { Download, Edit2, Upload, Users } from 'lucide-react';
 import { Badge, Button, Modal } from '@/components/ui';
 import MoneyInput from '@/components/MoneyInput';
 import { createClient } from '@/lib/supabase';
 import { formatMoney } from '@/lib/utils';
-import { CostCenter, PROC_ROLES, ProcRole, roleLabel } from '@/lib/procure';
+import { CostCenter, PROC_ROLES, ProcRole, downloadCsv, parseCsv, roleLabel } from '@/lib/procure';
+
+// CSV'de rol Türkçe veya sistem adıyla yazılabilir
+const ROLE_ALIASES: Record<string, ProcRole> = Object.fromEntries([
+  ...PROC_ROLES.map(r => [r.key, r.key]), ...PROC_ROLES.map(r => [r.label.toLocaleLowerCase('tr'), r.key]),
+  ['talep', 'requester'], ['onay', 'approver'], ['satınalma', 'buyer'], ['satinalma', 'buyer'], ['teslim', 'receiver'], ['mali işler', 'finance'], ['mali isler', 'finance'], ['yönetici', 'procure_admin'], ['yonetici', 'procure_admin'],
+]);
 import type { OrgUser } from './CostCentersStep';
 
 export interface Member { id: string; user_id: string; roles: ProcRole[]; cost_center_ids: string[]; approval_limit: number | null; is_active: boolean }
@@ -17,6 +23,8 @@ const isOrgAdmin = (u: OrgUser) => ['admin', 'org_admin', 'super_admin'].include
 export default function MembersStep({ users, members, costCenters, orgId, onChange }: { users: OrgUser[]; members: Member[]; costCenters: CostCenter[]; orgId?: string; onChange: () => void }) {
   const [edit, setEdit] = useState<{ user: OrgUser; roles: ProcRole[]; cost_center_ids: string[]; approval_limit: number | null; is_active: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [report, setReport] = useState<string[] | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const byUser = useMemo(() => new Map(members.map(m => [m.user_id, m])), [members]);
   const ccName = (id: string) => costCenters.find(c => c.id === id)?.name || '—';
 
@@ -37,6 +45,32 @@ export default function MembersStep({ users, members, costCenters, orgId, onChan
     setEdit(null); onChange();
   };
 
+  // CSV: e_posta;ad_soyad;roller;birim_kodlari;onay_limiti (roller ve kodlar | veya , ile)
+  const importCsv = async (file: File) => {
+    const { header, rows } = parseCsv(await file.text());
+    const col = (...n: string[]) => header.findIndex(h => n.includes(h));
+    const iMail = col('e_posta', 'e-posta', 'eposta', 'email'), iName = col('ad_soyad', 'ad', 'name'), iRoles = col('roller', 'roles'), iCc = col('birim_kodlari', 'birimler', 'cost_center_codes'), iLim = col('onay_limiti', 'approval_limit');
+    if (iMail < 0) { setReport(['Başlıkta "e_posta" sütunu yok. Şablonu indirip kullanın.']); return; }
+    const errs: string[] = []; const payload: any[] = [];
+    rows.forEach((r, i) => {
+      const line = i + 2; const roles: string[] = [];
+      for (const raw of (iRoles >= 0 ? r[iRoles] : '').split(/[|,]/).map(x => x.trim().toLocaleLowerCase('tr')).filter(Boolean)) {
+        const k = ROLE_ALIASES[raw]; if (!k) { errs.push(`Satır ${line}: rol "${raw}" tanınmadı.`); return; } roles.push(k);
+      }
+      payload.push({ line, email: r[iMail], name: iName >= 0 ? r[iName] : '', roles, cost_center_codes: iCc >= 0 ? (r[iCc] || '').split(/[|,]/).map(x => x.trim()).filter(Boolean) : [], approval_limit: iLim >= 0 ? r[iLim] : '' });
+    });
+    setBusy(true); setReport(null);
+    const { data: { session } } = await createClient().auth.getSession();
+    const res = await fetch('/api/procure/import-users', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` }, body: JSON.stringify({ rows: payload }) });
+    const j = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) { setReport([j.error || 'İçe aktarma başarısız.', ...errs]); return; }
+    const ok = (j.results || []).filter((x: any) => x.ok);
+    setReport([`${ok.length} kullanıcı işlendi (${ok.filter((x: any) => /davet/.test(x.message)).length} yeni davet), ${(j.results || []).length - ok.length + errs.length} hata.`,
+      ...errs, ...(j.results || []).filter((x: any) => !x.ok).map((x: any) => `Satır ${x.line} (${x.email}): ${x.message}`)]);
+    onChange();
+  };
+
   const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
   const counts = PROC_ROLES.map(r => ({ ...r, n: members.filter(m => m.is_active && m.roles.includes(r.key)).length + (r.key === 'procure_admin' ? users.filter(u => isOrgAdmin(u) && !byUser.get(u.id)?.roles.includes('procure_admin')).length : 0) }));
 
@@ -45,6 +79,18 @@ export default function MembersStep({ users, members, costCenters, orgId, onChan
       <div className="flex flex-wrap gap-1.5">{counts.map(r => <Badge key={r.key} variant={r.n ? 'primary' : 'default'}>{r.label}: {r.n}</Badge>)}</div>
       <p className="text-xs text-slate-500">Öğretmenler ve idari personel yalnızca <b>Talep eden</b> rolüyle talep açar. Yeni kullanıcıyı <Link href="/admin/users" className="text-blue-700 underline">Kullanıcı Yönetimi</Link>'nden ekleyin; orada da satınalma rolü seçilebilir. Admin kullanıcılar otomatik olarak satınalma yöneticisidir.</p>
 
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="secondary" disabled={busy} onClick={() => fileRef.current?.click()}><Upload className="h-3.5 w-3.5" />Kullanıcı + rol CSV içe aktar</Button>
+        <Button size="sm" variant="ghost" onClick={() => downloadCsv('kullanici-rol-sablon.csv', [['e_posta', 'ad_soyad', 'roller', 'birim_kodlari', 'onay_limiti'], ['ogretmen@okul.k12.tr', 'Ayşe Yılmaz', 'talep eden', 'K1-FEN', ''], ['mudur@okul.k12.tr', 'Mehmet Kaya', 'onaycı|talep eden', 'K1-FEN|K1-BIL', '100000']])}><Download className="h-3.5 w-3.5" />CSV şablonu</Button>
+        <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) importCsv(f); }} />
+      </div>
+      <p className="text-[11px] text-slate-500">Kurumda olmayan e-postalara Supabase davet e-postası gider (şifreyi kullanıcı belirler). Roller: talep eden, onaycı, satınalma uzmanı, teslim alan, mali işler, satınalma yöneticisi.</p>
+      {report && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+          <div className="mb-1 flex justify-between"><b>Sonuç</b><button className="text-slate-400" onClick={() => setReport(null)}>Kapat</button></div>
+          <ul className="max-h-40 space-y-0.5 overflow-y-auto">{report.map((l, i) => <li key={i} className={i ? 'text-rose-700' : ''}>{l}</li>)}</ul>
+        </div>
+      )}
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         {users.length === 0 ? (
           <div className="flex flex-col items-center py-10 text-center text-sm text-slate-500"><Users className="mb-2 h-8 w-8 text-slate-300" />Kurumda kullanıcı bulunamadı.</div>

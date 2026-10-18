@@ -51,7 +51,7 @@ import {
   Coffee,
   Plug,
   Scale,
-  BellRing, Grid3x3, ClipboardList, ShoppingBag, Wand2, FilePlus2, ListChecks, CheckSquare, PiggyBank, FileSearch, Truck, PackageCheck,
+  BellRing, Grid3x3, ClipboardList, ShoppingBag, Wand2, FilePlus2, ListChecks, CheckSquare, PiggyBank, FileSearch, Truck, PackageCheck, LineChart,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -136,8 +136,10 @@ const procureItems = [
   { href: '/procure/rfq', label: 'Teklif Toplama', icon: FileSearch },
   { href: '/procure/siparisler', label: 'Siparişler', icon: ShoppingCart },
   { href: '/procure/kabul', label: 'Mal Kabul', icon: PackageCheck },
+  { href: '/procure/faturalar', label: 'Fatura Eşleştirme', icon: Receipt },
   { href: '/procure/tedarikciler', label: 'Tedarikçiler', icon: Truck },
   { href: '/procure/butce', label: 'Bütçe', icon: PiggyBank },
+  { href: '/procure/raporlar', label: 'Raporlar', icon: LineChart },
   { href: '/procure/setup', label: 'Kurulum Sihirbazı', icon: Wand2 },
 ];
 

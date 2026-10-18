@@ -12,7 +12,7 @@ import IssuePanel from '@/components/procure/IssuePanel';
 import { OrderStatusBadge } from '@/components/procure/RequestBits';
 import { createClient } from '@/lib/supabase';
 import {
-  APPROVAL_STATUS, PROCURE_SQL_1C, RECEIVABLE, fmtDate, fmtDateTime, loadPeople, openProcFile, orderLink, peopleMap, procError, tl, useProcure, waNumber,
+  APPROVAL_STATUS, MATCH_STATUS, PROCURE_SQL_1C, RECEIVABLE, fmtDate, fmtDateTime, loadPeople, openProcFile, orderLink, peopleMap, procError, tl, useProcure, waNumber,
 } from '@/lib/procure';
 import { ArrowLeft, Ban, CheckCircle2, Copy, ExternalLink, History, MessageCircle, PackageCheck, PencilLine, Printer, Save, Send } from 'lucide-react';
 
@@ -52,7 +52,8 @@ function OrderDetail({ p }: { p: ReturnType<typeof useProcure> }) {
     ]);
     const rcIds = (rcs.data || []).map((r: any) => r.id);
     const atts = rcIds.length ? (await supabase.from('proc_attachments').select('*').eq('owner_type', 'receipt').in('owner_id', rcIds)).data || [] : [];
-    setD({ o: o.data, lines: ls.data || [], apps: apps.data || [], receipts: (rcs.data || []).filter((r: any) => r.status === 'confirmed'), reqs: reqs.data || [],
+    const inv = await supabase.from('proc_invoice_matches').select('*, doc:parasut_document_id(doc_no, issue_date)').eq('order_id', id).order('matched_at');
+    setD({ invoices: inv.error ? [] : inv.data || [], o: o.data, lines: ls.data || [], apps: apps.data || [], receipts: (rcs.data || []).filter((r: any) => r.status === 'confirmed'), reqs: reqs.data || [],
       prof: prof.data, names: peopleMap(people), org: org.data?.name || '', atts });
   }, [id]);
   useEffect(() => { load(); }, [load]);
@@ -187,6 +188,17 @@ function OrderDetail({ p }: { p: ReturnType<typeof useProcure> }) {
           ))}</ul>
         )}
       </Card>
+
+      {d.invoices.length > 0 && (
+        <Card className="p-4">
+          <div className="mb-2 flex items-center justify-between"><p className="text-sm font-semibold text-slate-800">Faturalar</p><p className="text-xs text-slate-500">Faturalanan {tl(o.invoiced_net)} / {tl(o.subtotal)}</p></div>
+          <ul className="divide-y divide-slate-100">{d.invoices.map((m: any) => (
+            <li key={m.id} className="flex items-center gap-2 py-1.5 text-sm"><span className="flex-1">{m.doc?.doc_no || '—'} · {fmtDate(m.doc?.issue_date)}</span><span>{tl(m.invoice_net)}</span>
+              <span className={`rounded-full border px-2 py-0.5 text-[11px] ${MATCH_STATUS[m.status]?.cls}`}>{MATCH_STATUS[m.status]?.label}</span></li>
+          ))}</ul>
+          <Link href="/procure/faturalar" className="mt-1 inline-block text-xs text-blue-700">Fatura eşleştirme →</Link>
+        </Card>
+      )}
 
       <IssuePanel vendorId={o.vendor_id} orderId={o.id} canManage={isBuyer} canOpen={isBuyer || p.hasRole('receiver')} />
 

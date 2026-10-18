@@ -11,7 +11,7 @@ import { VendorStatusBadge } from '@/components/procure/RequestBits';
 import { createClient } from '@/lib/supabase';
 import { fetchAll } from '@/lib/fetch-all';
 import { Category, PROCURE_SQL_1B, VENDOR_STATUS, VendorDoc, VendorStatus, docExpired, docExpiringSoon, fmtDate, procError } from '@/lib/procure';
-import { AlertTriangle, Factory, Plus, Search } from 'lucide-react';
+import { AlertTriangle, Factory, Plus, Printer, Search } from 'lucide-react';
 
 export default function VendorsPage() {
   return (
@@ -66,6 +66,7 @@ function VendorList({ canEdit }: { canEdit: boolean }) {
         <div className="relative min-w-[180px] flex-1"><Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Ad veya vergi no" className="h-9 w-full rounded-lg border border-slate-200 pl-8 pr-3 text-sm" /></div>
         <select value={st} onChange={e => setSt(e.target.value)} className="h-9 rounded-lg border border-slate-200 px-2 text-sm"><option value="">Tüm statüler</option>{Object.entries(VENDOR_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <select value={cat} onChange={e => setCat(e.target.value)} className="h-9 rounded-lg border border-slate-200 px-2 text-sm"><option value="">Tüm kategoriler</option>{cats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        <a href="/procure/tedarikciler/onayli-liste/print" target="_blank" className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700"><Printer className="h-3.5 w-3.5" />Onaylı Tedarikçi Listesi</a>
         {canEdit && <Button size="sm" onClick={() => setAdd({ name: '', tax_number: '', email: '', phone: '', contact_name: '', status: 'candidate', category_ids: [] })}><Plus className="h-3.5 w-3.5" />Tedarikçi ekle</Button>}
       </div>
       {canEdit && <VendorImport categories={cats} onDone={load} />}

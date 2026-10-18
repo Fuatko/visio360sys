@@ -6,6 +6,7 @@
 import { loadParasutSales, mergeParasut } from '@/lib/parasut-facts';
 import { loadWhitespace } from '@/lib/whitespace';
 import { progress, yearRevenue } from '@/lib/account-plans';
+import { loadProcureReminders } from '@/lib/procure-reminders';
 
 const n = (v: any) => Number(v) || 0;
 const safe = async (q: any) => { try { const r = await q; return r.error ? [] : r.data || []; } catch { return []; } };
@@ -19,7 +20,10 @@ const CLOSED_OPP = ['Kazanıldı', 'Kaybedildi', 'won', 'lost', 'Won', 'Lost'];
 
 export type ReminderKind =
   | 'overdue' | 'due_soon' | 'quote_hot' | 'quote_revision' | 'quote_unopened' | 'quote_expiring'
-  | 'next_step' | 'opp_close' | 'repeat' | 'silent' | 'renewal' | 'crosssell' | 'plan_action' | 'plan_behind';
+  | 'next_step' | 'opp_close' | 'repeat' | 'silent' | 'renewal' | 'crosssell' | 'plan_action' | 'plan_behind'
+  // Procure (yalnızca Procure lisanslı kurumda üretilir)
+  | 'proc_approval_waiting' | 'proc_rfq_deadline' | 'proc_late_delivery' | 'proc_unmatched_invoice' | 'proc_vendor_doc_expiring'
+  | 'proc_vendor_reevaluation' | 'proc_budget_80';
 
 export type Reminder = {
   key: string; kind: ReminderKind; priority: 1 | 2 | 3; due: string;
@@ -31,6 +35,8 @@ export const KIND_LABEL: Record<ReminderKind, string> = {
   overdue: 'Vadesi geçen alacak', due_soon: 'Vadesi yaklaşan alacak', quote_hot: 'Sıcak teklif', quote_revision: 'Revizyon talebi',
   quote_unopened: 'Açılmayan teklif', quote_expiring: 'Süresi dolan teklif', next_step: 'Sonraki adım', opp_close: 'Fırsat kapanışı',
   repeat: 'Tekrar alım zamanı', silent: 'Temassız müşteri', renewal: 'Yenileme', crosssell: 'Çapraz satış', plan_action: 'Hesap planı aksiyonu', plan_behind: 'Plan hedefi',
+  proc_approval_waiting: 'Bekleyen onay (satınalma)', proc_rfq_deadline: 'Teklif son tarihi', proc_late_delivery: 'Geciken teslimat',
+  proc_unmatched_invoice: 'Fatura eşleştirme', proc_vendor_doc_expiring: 'Tedarikçi belgesi', proc_vendor_reevaluation: 'Tedarikçi değerlendirme', proc_budget_80: 'Bütçe %80',
 };
 
 export async function loadReminders(supabase: any, opts: { customerId?: string; crossSell?: boolean } = {}) {
@@ -204,6 +210,9 @@ export async function loadReminders(supabase: any, opts: { customerId?: string; 
       });
     } catch { /* analiz yüklenemezse atla */ }
   }
+
+  // 10) Satınalma (Procure lisansı yoksa hiçbir şey eklenmez; müşteri kartında gösterilmez)
+  if (!cid) { try { out.push(...(await loadProcureReminders(supabase))); } catch { /* Procure tabloları yoksa atla */ } }
 
   // Kullanıcının kapattığı / ertelediği hatırlatmalar
   const st = new Map<string, any>((ready ? statesRes.data || [] : []).map((s: any) => [s.rkey, s]));

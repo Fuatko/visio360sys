@@ -365,3 +365,31 @@ export const ISSUE_SEVERITY: Record<string, { label: string; cls: string }> = {
   critical: { label: 'Kritik', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
 };
 export const ISSUE_STATUS: Record<string, string> = { open: 'Açık', action: 'Düzeltici faaliyette', verification: 'Etkinlik kontrolünde', closed: 'Kapandı' };
+
+// =====================================================================
+// FAZ 1d — Fatura eşleştirme, tedarikçi değerlendirme, KPI
+// =====================================================================
+export const PROCURE_SQL_1D = 'sql/procure/05-fatura-degerlendirme.sql';
+
+export const MATCH_STATUS: Record<string, { label: string; cls: string }> = {
+  matched: { label: 'Eşleşti', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  price_variance: { label: 'Fiyat farkı', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  qty_variance: { label: 'Miktar farkı', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  over_invoiced: { label: 'Fazla faturalama', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+  approved_with_variance: { label: 'Farkla onaylandı', cls: 'bg-sky-50 text-sky-700 border-sky-200' },
+  rejected: { label: 'Reddedildi', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+  reversed: { label: 'Geri alındı', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
+
+// Değerlendirme kriterleri (ağırlıklar politikadan; varsayılan §4.7)
+export const EVAL_CRITERIA = [
+  { key: 'quality', label: 'Kalite / uygunluk', hint: 'Red oranı ve uygunsuzluklar' },
+  { key: 'on_time', label: 'Zamanında teslim', hint: 'Kabul tarihi ≤ bildirilen/istenen tarih' },
+  { key: 'price', label: 'Fiyat rekabeti', hint: 'RFQ\'larda ortalama sıra (1 = en düşük)' },
+  { key: 'communication', label: 'İletişim / hizmet', hint: 'Hizmet onayı yıldız ortalaması' },
+  { key: 'compliance', label: 'Belge ve mevzuat uyumu', hint: 'Geçerlilik tarihi dolmuş belge' },
+] as const;
+export const DEFAULT_EVAL_WEIGHTS: Record<string, number> = { quality: 30, on_time: 25, price: 15, communication: 15, compliance: 15 };
+export const gradeOf = (score: number) => (score >= 85 ? 'A' : score >= 70 ? 'B' : score >= 50 ? 'C' : 'D');
+export const GRADE_CLS: Record<string, string> = { A: 'bg-emerald-50 text-emerald-700 border-emerald-200', B: 'bg-sky-50 text-sky-700 border-sky-200', C: 'bg-amber-50 text-amber-700 border-amber-200', D: 'bg-rose-50 text-rose-700 border-rose-200' };
+export const DECISION_LABEL: Record<string, string> = { approve: 'Onaylı', conditional: 'Şartlı onay', block: 'Bloke' };

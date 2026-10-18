@@ -23,6 +23,7 @@ CREATE TABLE public.customers (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), or
 CREATE TABLE public.products (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid, name text, unit text, price numeric);
 CREATE TABLE public.notifications (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid, user_id uuid, title text NOT NULL, message text, type text DEFAULT 'info', related_type text, related_id uuid, link text, is_read boolean DEFAULT false, is_dismissed boolean DEFAULT false, created_at timestamptz DEFAULT now());
 CREATE TABLE public.parasut_documents (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, kind text, parasut_id text, doc_no text, description text, issue_date date, contact_name text, tax_number text, customer_id uuid, category text, currency text, net_total numeric, vat_total numeric, gross_total numeric, net_total_try numeric);
+CREATE TABLE public.parasut_document_lines (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organization_id uuid NOT NULL, document_id uuid NOT NULL REFERENCES public.parasut_documents(id) ON DELETE CASCADE, parasut_detail_id text, description text, product_name text, quantity numeric, unit_price numeric, discount_pct numeric, vat_rate numeric, net_total_try numeric);
 CREATE TABLE public.quote_letterhead (organization_id uuid PRIMARY KEY, legal_name text, address text, phone text, email text, tax_office text, tax_number text, logo_path text, signer_name text, signer_title text, accent_color text);
 
 -- sirket-ayrimi-rls.sql + bayi-portali.sql
@@ -39,7 +40,7 @@ CREATE POLICY org_admin ON public.organizations FOR ALL USING (public.is_super_a
 CREATE POLICY org_read ON public.organizations FOR SELECT USING (id = public.current_org_id());
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY self ON public.users FOR SELECT USING (id = auth.uid());
-DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['customers','products','parasut_documents','quote_letterhead'] LOOP
+DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['customers','products','parasut_documents','parasut_document_lines','quote_letterhead'] LOOP
   EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
   EXECUTE format('CREATE POLICY org_isolation ON public.%I FOR ALL TO authenticated USING (organization_id = public.current_org_id()) WITH CHECK (organization_id = public.current_org_id())', t);
 END LOOP; END $$;

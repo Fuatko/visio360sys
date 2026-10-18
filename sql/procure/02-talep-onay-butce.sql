@@ -301,7 +301,7 @@ GRANT EXECUTE ON FUNCTION public.proc_budget_revise(uuid, numeric, text) TO auth
 -- ---------------------------------------------------------------------
 -- 4b. BÜTÇE HESABI
 --   kullanılabilir = bütçe − ön taahhüt (onaylı, siparişe dönmemiş talep) − taahhüt (sipariş; Faz 1c)
---                    − gerçekleşen (eşleşmiş fatura; Faz 1d) − [tüm kurum satırında] Paraşüt kategori gerçekleşeni
+--                    − gerçekleşen (siparişle eşleşmiş fatura) − [tüm kurum satırında] eşleşmemiş Paraşüt kategori gerçekleşeni
 -- ---------------------------------------------------------------------
 -- Paraşüt alış faturaları → Procure kategorisi (proc_categories.parasut_category eşlemesi), bütçe ayı bazında
 CREATE OR REPLACE FUNCTION public.proc_parasut_actuals(p_fy text)
@@ -310,14 +310,20 @@ DECLARE r record;
 BEGIN
   IF to_regclass('public.parasut_documents') IS NULL THEN RETURN; END IF;
   SELECT * INTO r FROM public.proc_fiscal_range(p_fy);
+  -- Bütçe satırı olan bir siparişle eşleşmiş faturalar (05-fatura-degerlendirme.sql) o satırın gerçekleşenine
+  -- yazılır; burada tekrar sayılmaz
   RETURN QUERY EXECUTE
     'SELECT c.id, public.proc_fiscal_month(d.issue_date), sum(COALESCE(d.net_total_try, d.net_total, 0))::numeric
        FROM public.parasut_documents d
        JOIN public.proc_categories c ON c.organization_id = d.organization_id
         AND c.parasut_category IS NOT NULL AND lower(trim(c.parasut_category)) = lower(trim(d.category))
       WHERE d.organization_id = public.current_org_id() AND d.kind = ''purchase_bill''
-        AND d.issue_date BETWEEN $1 AND $2
-      GROUP BY 1, 2'
+        AND d.issue_date BETWEEN $1 AND $2'
+      || CASE WHEN to_regclass('public.proc_invoice_matches') IS NOT NULL THEN
+           ' AND NOT EXISTS (SELECT 1 FROM public.proc_invoice_matches m JOIN public.proc_orders o ON o.id = m.order_id
+                              WHERE m.parasut_document_id = d.id AND m.status IN (''matched'',''approved_with_variance'') AND o.budget_line_id IS NOT NULL)'
+         ELSE '' END
+      || ' GROUP BY 1, 2'
     USING r.start_date, r.end_date;
 END $$;
 GRANT EXECUTE ON FUNCTION public.proc_parasut_actuals(text) TO authenticated;
@@ -337,15 +343,21 @@ BEGIN
   -- faturalanmamış kısmı taahhüt. Talep siparişe dönünce (ordered) kendi ön taahhüdü düşer.
   IF to_regclass('public.proc_orders') IS NOT NULL THEN
     EXECUTE 'SELECT COALESCE(sum(subtotal) FILTER (WHERE status IN (''draft'',''pending_approval'')), 0),
-                    COALESCE(sum(GREATEST(subtotal - invoiced_net, 0)) FILTER (WHERE status IN (''approved'',''sent'',''acknowledged'',''partially_received'',''received'')), 0)
+                    COALESCE(sum(GREATEST(subtotal - invoiced_net, 0)) FILTER (WHERE status IN (''approved'',''sent'',''acknowledged'',''partially_received'',''received'',''invoiced'')), 0)
                FROM public.proc_orders WHERE budget_line_id = $1'
       INTO v_opre, v_commit USING b.id;
     v_pre := v_pre + v_opre;
   END IF;
+  -- Gerçekleşen: bu satırdaki siparişlerle eşleşmiş Paraşüt alış faturaları (05-fatura-degerlendirme.sql)
+  IF to_regclass('public.proc_invoice_matches') IS NOT NULL THEN
+    EXECUTE 'SELECT COALESCE(sum(m.invoice_net), 0) FROM public.proc_invoice_matches m JOIN public.proc_orders o ON o.id = m.order_id
+              WHERE o.budget_line_id = $1 AND m.status IN (''matched'',''approved_with_variance'')'
+      INTO v_actual USING b.id;
+  END IF;
 
   -- Masraf merkezi belli olmayan Paraşüt alışları yalnızca tüm kurum (masraf merkezi boş) satırına düşer
   IF b.cost_center_id IS NULL THEN
-    SELECT COALESCE(sum(a.amount), 0) INTO v_actual FROM public.proc_parasut_actuals(b.fiscal_year) a
+    SELECT v_actual + COALESCE(sum(a.amount), 0) INTO v_actual FROM public.proc_parasut_actuals(b.fiscal_year) a
      WHERE b.category_id IS NULL OR a.category_id IN (SELECT public.proc_cat_descendants(b.category_id));
   END IF;
 

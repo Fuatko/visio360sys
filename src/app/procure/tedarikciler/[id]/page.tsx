@@ -11,9 +11,9 @@ import { RfqStatusBadge, VendorStatusBadge } from '@/components/procure/RequestB
 import IssuePanel from '@/components/procure/IssuePanel';
 import { createClient } from '@/lib/supabase';
 import {
-  Category, PROCURE_SQL_1B, VENDOR_DOC_TYPES, VENDOR_STATUS, VendorDoc, VendorStatus, docExpired, docExpiringSoon, fmtDate, openProcFile, procError, tl, uploadProcFile,
+  Category, DECISION_LABEL, GRADE_CLS, PROCURE_SQL_1B, VENDOR_DOC_TYPES, VENDOR_STATUS, VendorDoc, VendorStatus, docExpired, docExpiringSoon, fmtDate, openProcFile, procError, tl, uploadProcFile,
 } from '@/lib/procure';
-import { AlertTriangle, ArrowLeft, FileText, Paperclip, Plus, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ClipboardCheck, FileText, Paperclip, Plus, Save, Trash2 } from 'lucide-react';
 
 export default function VendorDetailPage() {
   return (
@@ -31,6 +31,7 @@ function VendorDetail({ canEdit, canOpenIssue }: { canEdit: boolean; canOpenIssu
   const [f, setF] = useState<any>(null);
   const [cats, setCats] = useState<Category[]>([]);
   const [hist, setHist] = useState<any[]>([]);
+  const [evals, setEvals] = useState<any[]>([]);
   const [missing, setMissing] = useState(false);
   const [msg, setMsg] = useState('');
   const [doc, setDoc] = useState<{ type: string; valid_until: string; file: File | null } | null>(null);
@@ -46,6 +47,8 @@ function VendorDetail({ canEdit, canOpenIssue }: { canEdit: boolean; canOpenIssu
       supabase.from('proc_rfq_vendors').select('id, responded_at, declined, view_count, rfq:rfq_id(id, rfq_no, title, status, created_at)').eq('vendor_id', id).order('created_at', { ascending: false }),
     ]);
     setCats(c.data || []);
+    const ev = await supabase.from('proc_vendor_evaluations').select('*').eq('vendor_id', id).order('created_at', { ascending: false });
+    setEvals(ev.error ? [] : ev.data || []);
     const rvIds = (rv.data || []).map((x: any) => x.id);
     const [qs, aw] = await Promise.all([
       rvIds.length ? supabase.from('proc_quotes').select('rfq_vendor_id, total_net').eq('is_current', true).in('rfq_vendor_id', rvIds) : Promise.resolve({ data: [] as any[] }),
@@ -156,6 +159,23 @@ function VendorDetail({ canEdit, canOpenIssue }: { canEdit: boolean; canOpenIssu
               <span className="text-xs text-slate-500">{h.declined ? 'teklif vermedi' : h.quote ? tl(h.quote.total_net) : h.view_count ? 'açtı, yanıt yok' : 'açmadı'}</span>
               {h.awarded > 0 && <span className="text-xs font-medium text-emerald-700">kazandı {tl(h.awarded)}</span>}
               <RfqStatusBadge status={h.rfq?.status} />
+            </li>
+          ))}</ul>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-semibold text-slate-800">Değerlendirmeler (ISO 9001 · 8.4)</p>
+          {canEdit && <Link href={`/procure/tedarikciler/${id}/degerlendir`} className="inline-flex items-center gap-1 rounded-lg bg-[#1B3A5C] px-3 py-1.5 text-xs font-medium text-white"><ClipboardCheck className="h-3.5 w-3.5" />Değerlendir</Link>}
+        </div>
+        {evals.length === 0 ? <p className="text-xs text-slate-400">Henüz değerlendirme yok. Form, teslim/red/hizmet/fiyat verilerinden öneri puanlarıyla dolu gelir.</p> : (
+          <ul className="divide-y divide-slate-100">{evals.map(e => (
+            <li key={e.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+              <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${GRADE_CLS[e.grade]}`}>{e.grade}</span>
+              <span className="font-medium">{Number(e.score)}</span>
+              <span className="flex-1 text-xs text-slate-600">{fmtDate(e.period_start)}–{fmtDate(e.period_end)} · {DECISION_LABEL[e.decision]}{e.action_note ? ` · ${e.action_note}` : ''}</span>
+              <span className="text-[11px] text-slate-400">{fmtDate(e.created_at)}</span>
             </li>
           ))}</ul>
         )}

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Modal, Button } from '@/components/ui';
 import { setReminderState, KIND_LABEL, type Reminder, type ReminderKind } from '@/lib/reminders';
 import { Wallet, CalendarClock, Flame, MailX, Hourglass, CalendarCheck, Target, Repeat, PhoneOff, RefreshCcw, Lightbulb, MessageSquareWarning,
-  Check, AlarmClock, Phone, PenLine, ChevronDown, ClipboardList, TrendingDown } from 'lucide-react';
+  Check, AlarmClock, Phone, PenLine, ChevronDown, ClipboardList, TrendingDown, CheckSquare, FileSearch, Truck, Receipt, FileWarning, ClipboardCheck, PiggyBank } from 'lucide-react';
 
 export const KIND_ICON: Record<ReminderKind, { icon: any; cls: string }> = {
   overdue: { icon: Wallet, cls: 'bg-rose-50 text-rose-600' },
@@ -22,6 +22,13 @@ export const KIND_ICON: Record<ReminderKind, { icon: any; cls: string }> = {
   crosssell: { icon: Lightbulb, cls: 'bg-violet-50 text-violet-600' },
   plan_action: { icon: ClipboardList, cls: 'bg-indigo-50 text-indigo-600' },
   plan_behind: { icon: TrendingDown, cls: 'bg-rose-50 text-rose-600' },
+  proc_approval_waiting: { icon: CheckSquare, cls: 'bg-amber-50 text-amber-600' },
+  proc_rfq_deadline: { icon: FileSearch, cls: 'bg-sky-50 text-sky-600' },
+  proc_late_delivery: { icon: Truck, cls: 'bg-rose-50 text-rose-600' },
+  proc_unmatched_invoice: { icon: Receipt, cls: 'bg-indigo-50 text-indigo-600' },
+  proc_vendor_doc_expiring: { icon: FileWarning, cls: 'bg-amber-50 text-amber-600' },
+  proc_vendor_reevaluation: { icon: ClipboardCheck, cls: 'bg-teal-50 text-teal-600' },
+  proc_budget_80: { icon: PiggyBank, cls: 'bg-rose-50 text-rose-600' },
 };
 const PRI = { 1: 'border-l-rose-500', 2: 'border-l-amber-400', 3: 'border-l-slate-300' } as const;
 const TYPES = ['Telefon', 'Email', 'Toplantı', 'Ziyaret', 'WhatsApp', 'Not'];

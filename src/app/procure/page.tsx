@@ -49,13 +49,14 @@ function Panel({ p }: { p: ReturnType<typeof useProcure> }) {
       const isReceiver = p.roles.includes('receiver');
       const ords = (isBuyer || isReceiver) ? (await supabase.from('proc_orders').select('id, order_no, status, expected_date, ack_expected_date, subtotal, vendor:vendor_id(name)')
         .in('status', ['draft', 'pending_approval', 'approved', 'sent', 'acknowledged', 'partially_received'])).data || [] : [];
+      const kpi = isFin ? (await supabase.rpc('proc_kpis', { p_from: `${fy.slice(0, 4)}-${String(start).padStart(2, '0')}-01`, p_to: new Date().toISOString().slice(0, 10) })).data : null;
       const pendIds = idList(pend.data);
       const pendReqs = pendIds.length ? await supabase.from('proc_approvals').select('subject_id').in('id', pendIds) : { data: [] as any[] };
       const pendRows = (pendReqs.data || []).length ? (await supabase.from('proc_requests').select('id, request_no, title, estimated_total, priority').in('id', (pendReqs.data || []).map((x: any) => x.subject_id))).data || [] : [];
       const fm = ((new Date().getMonth() + 1 - start + 12) % 12) + 1;
       setS({
         policy: pol.data, fy, start, missing: !!mine.error && /relation|does not exist/i.test(mine.error.message),
-        mine: mine.data || [], pend: pendRows, open, rfqs, ords, isReceiver,
+        mine: mine.data || [], pend: pendRows, open, rfqs, ords, isReceiver, kpi,
         budget: budget.data || [], monthSpend: ((actual as any).data || []).filter((x: any) => x.fiscal_month === fm).reduce((a: number, x: any) => a + +x.amount, 0),
       });
     })();
@@ -148,6 +149,11 @@ function Panel({ p }: { p: ReturnType<typeof useProcure> }) {
           <Card className="p-4"><p className="flex items-center gap-1 text-xs text-slate-500"><PiggyBank className="h-3.5 w-3.5" />{s.fy} bütçesi</p><p className="mt-1 text-xl font-bold text-slate-800">{tl(bTot.amount)}</p><p className="text-[11px] text-slate-400">Kalan {tl(bTot.avail)} · kullanım %{usedPct}</p></Card>
           <Card className="p-4"><p className="text-xs text-slate-500">Bu ay harcama ({MONTHS_TR[new Date().getMonth()]})</p><p className="mt-1 text-xl font-bold text-slate-800">{tl(s.monthSpend)}</p><p className="text-[11px] text-slate-400">Paraşüt'te kategorisi eşlenmiş alış faturaları</p></Card>
           <Card className="p-4"><p className="text-xs text-slate-500">%80'i geçen bütçe satırı</p><p className={`mt-1 text-xl font-bold ${hot.length ? 'text-amber-600' : 'text-slate-800'}`}>{hot.length}</p><Link href="/procure/butce" className="text-[11px] text-blue-700">Bütçe ekranı →</Link></Card>
+          {s.kpi && <>
+            <Card className="p-4"><p className="text-xs text-slate-500">Siparişsiz alım ({s.fy})</p><p className={`mt-1 text-xl font-bold ${Number(s.kpi.unordered_pct) > 20 ? 'text-amber-600' : 'text-slate-800'}`}>{s.kpi.unordered_pct != null ? `%${Number(s.kpi.unordered_pct).toLocaleString('tr-TR')}` : '—'}</p><Link href="/procure/faturalar" className="text-[11px] text-blue-700">{s.kpi.unordered_count || 0} fatura · eşleştirme →</Link></Card>
+            <Card className="p-4"><p className="text-xs text-slate-500">Tasarruf ({s.fy})</p><p className="mt-1 text-xl font-bold text-slate-800">{tl(s.kpi.savings)}</p><p className="text-[11px] text-slate-400">{s.kpi.savings_pct != null ? `en yüksek teklife göre %${Number(s.kpi.savings_pct).toLocaleString('tr-TR')}` : 'sonuçlanan RFQ yok'}</p></Card>
+            <Card className="p-4"><p className="text-xs text-slate-500">3 teklif uyumu · zamanında teslim</p><p className="mt-1 text-xl font-bold text-slate-800">{s.kpi.three_quote_pct != null ? `%${s.kpi.three_quote_pct}` : '—'} · {s.kpi.on_time_pct != null ? `%${s.kpi.on_time_pct}` : '—'}</p><Link href="/procure/raporlar" className="text-[11px] text-blue-700">Raporlar →</Link></Card>
+          </>}
         </div>
       )}
 
