@@ -6,6 +6,8 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF;
 END $$;
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+-- Supabase gibi: public şemada oluşturulan her fonksiyon varsayılan olarak anon/authenticated'a açık
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA auth; GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
 CREATE TABLE auth.users (id uuid PRIMARY KEY, email text);

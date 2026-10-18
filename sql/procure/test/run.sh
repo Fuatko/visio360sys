@@ -10,6 +10,7 @@ for f in 01-altyapi 02-talep-onay-butce 03-tedarikci-rfq 04-siparis-kabul 05-fat
   psql -q -v ON_ERROR_STOP=1 -d $DB -f $S/$f.sql >/dev/null 2>&1 || { echo "HATA: $f.sql"; psql -v ON_ERROR_STOP=1 -d $DB -f $S/$f.sql | tail -5; exit 1; }
   echo "ok  $f.sql"
 done
+psql -q -v ON_ERROR_STOP=1 -d $DB -f $D/test-yetki.sql 2>&1 | grep -E "OK |TAMAM|ERROR|DETAIL"
 psql -q -v ON_ERROR_STOP=1 -d $DB -f $D/test-1a.sql | grep -E "TAMAM|ERROR"
 psql -q -v ON_ERROR_STOP=1 -d $DB -f $D/test-1b.sql 2>&1 | grep -E "OK |TAMAM|ERROR|DETAIL|CONTEXT"
 psql -q -v ON_ERROR_STOP=1 -d $DB -f $D/test-1c.sql 2>&1 | grep -E "OK |TAMAM|ERROR|DETAIL|CONTEXT"

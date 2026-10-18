@@ -6,6 +6,7 @@
 --   3. Taahhüt → gerçekleşen: siparişin invoiced_net / invoiced_qty alanları (bütçe 02'de okunur)
 --   4. Tedarikçi değerlendirme (ISO 9001 md. 8.4): otomatik veriler, puan, A–D not, karar
 --   5. proc_kpis(): panel ve raporlar
+--   7. Yetki sertleştirme: anon yalnızca proc_public_% fonksiyonlarını çağırabilir
 -- Önkoşul: 01, 02 (bu sürüm), 03, 04 ve parasut.sql (parasut_documents). Tek seferde çalıştırılır; tekrar çalıştırmak güvenlidir.
 -- =====================================================================
 
@@ -534,6 +535,36 @@ BEGIN
       EXECUTE format('DROP TRIGGER IF EXISTS trg_change_log ON public.%I', tbl);
       EXECUTE format('CREATE TRIGGER trg_change_log AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.log_change()', tbl);
     END IF;
+  END LOOP;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- 7. YETKİ SERTLEŞTİRME — her Procure SQL dosyasının SONUNA eklenir (tekrar çalıştırılabilir)
+--   Supabase public şemadaki fonksiyonları varsayılan olarak anon'a (giriş yapmamış) açar.
+--   • proc_public_%  → anon + authenticated (tedarikçi sayfaları /rfq, /po; içeride token ve hız sınırı denetimi)
+--   • iç fonksiyonlar → yalnızca diğer SECURITY DEFINER fonksiyonların içinden çağrılır; authenticated'a da kapalı
+--   • tetikleyici fonksiyonları → kimseye EXECUTE verilmez (tetikleyici olarak çalışır)
+--   • diğer proc_% ile org_has_module / my_enabled_modules → yalnızca authenticated
+-- ---------------------------------------------------------------------
+DO $$
+DECLARE
+  f record;
+  internal text[] := ARRAY['proc_notify','proc_notify_approvers','proc_event','proc_start_approval','proc_add_step','proc_add_subject_step',
+                           'proc_role_holders','proc_rate_limit','proc_rfq_save_quote','proc_rfq_award_decide','proc_order_approval_state',
+                           'proc_order_approval_decide','proc_invoice_apply'];
+BEGIN
+  FOR f IN SELECT p.oid::regprocedure AS sig, p.proname, p.prorettype = 'trigger'::regtype AS is_trigger
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public' AND (p.proname LIKE 'proc\_%' OR p.proname IN ('org_has_module','my_enabled_modules','org_modules_guard')) LOOP
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon', f.sig);
+    IF f.proname LIKE 'proc\_public\_%' THEN
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO anon, authenticated', f.sig);
+    ELSIF f.is_trigger OR f.proname = ANY(internal) THEN
+      EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM authenticated', f.sig);
+    ELSE
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', f.sig);
+    END IF;
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f.sig);
   END LOOP;
 END $$;
 
