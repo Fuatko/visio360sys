@@ -6,7 +6,7 @@ import { Card, CardBody, Button, Badge, Modal, Input, Select, Textarea, EmptySta
 import { formatMoney, cleanPayload } from '@/lib/utils';
 import { Building2, Plus, Edit2, Trash2, Mail, Phone, User, RefreshCw, Search, Sparkles, Star, MapPin, Copy, AlertTriangle, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
-import { CitySelect } from '@/components/TrSelects';
+import { CitySelect, DistrictSelect } from '@/components/TrSelects';
 import { SEGMENTS, checkTaxNumber, findDuplicates, duplicateGroups, DupMatch } from '@/lib/crm';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
@@ -306,8 +306,13 @@ export default function CustomersPage() {
               </div>
               <Input label="Vergi dairesi" value={formData.tax_office} onChange={(e) => setFormData({ ...formData, tax_office: e.target.value })} />
               <Select label="Segment" value={formData.segment} onChange={(e) => setFormData({ ...formData, segment: e.target.value })} options={[{ value: '', label: '-' }, ...SEGMENTS.map(x => ({ value: x, label: x }))]} />
-              <CitySelect label="İl" value={formData.city} onChange={(v) => setFormData({ ...formData, city: v })} />
-              <Input label="İlçe" value={formData.district} onChange={(e) => setFormData({ ...formData, district: e.target.value })} />
+              <CitySelect label="İl" value={formData.city} onChange={(v) => setFormData({ ...formData, city: v, district: v === formData.city ? formData.district : '' })} />
+              <DistrictSelect city={formData.city} value={formData.district} onChange={(v) => setFormData({ ...formData, district: v })} />
+              <div className="md:col-span-3">
+                <label className="mb-1 block text-sm font-medium text-slate-700">Açık adres</label>
+                <textarea rows={2} value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder="Mahalle, cadde/sokak, bina no"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" />
+              </div>
             </div>); })()}
           {dups && dups.length > 0 && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">

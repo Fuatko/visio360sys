@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { BUYING_ROLES } from '@/lib/crm';
+import { CitySelect, DistrictSelect, SectorSelect } from '@/components/TrSelects';
 import BantChecklist, { Bant, EMPTY_BANT, bantSuggestedProbability } from '@/components/BantChecklist';
 
 interface Lead {
@@ -19,6 +20,7 @@ interface Lead {
   contact_phone: string;
   contact_mobile?: string;
   extra_contacts?: ExtraContact[];
+  sector?: string; city?: string; district?: string; address?: string; company_phone?: string; website?: string;
   source: string;
   status: string;
   score: number;
@@ -33,7 +35,8 @@ interface Lead {
 // Ek yetkililer (bir firmada birden fazla patron / karar verici olabilir)
 interface ExtraContact { full_name: string; title?: string; buying_role?: string; email?: string; mobile?: string; phone?: string }
 const EMPTY_CONTACT: ExtraContact = { full_name: '', title: '', buying_role: '', email: '', mobile: '', phone: '' };
-const LEAD_NEW_COLS = /extra_contacts|contact_mobile/;
+const ORG_COLS = ['sector', 'city', 'district', 'address', 'company_phone', 'website'] as const;
+const LEAD_NEW_COLS = /extra_contacts|contact_mobile|sector|city|district|address|company_phone|website/;
 
 interface SalesPerson {
   id: string;
@@ -121,6 +124,7 @@ export default function LeadsPage() {
     contact_phone: '',
     contact_mobile: '',
     extra_contacts: [] as ExtraContact[],
+    sector: '', city: '', district: '', address: '', company_phone: '', website: '',
     source: 'website',
     status: 'new',
     score: 50,
@@ -170,6 +174,7 @@ export default function LeadsPage() {
         contact_email: lead.contact_email || '',
         contact_phone: lead.contact_phone || '',
         contact_mobile: lead.contact_mobile || '',
+        sector: lead.sector || '', city: lead.city || '', district: lead.district || '', address: lead.address || '', company_phone: lead.company_phone || '', website: lead.website || '',
         extra_contacts: Array.isArray(lead.extra_contacts) ? lead.extra_contacts.map(c => ({ ...EMPTY_CONTACT, ...c })) : [],
         source: lead.source || 'website',
         status: lead.status || 'new',
@@ -190,6 +195,7 @@ export default function LeadsPage() {
         contact_phone: '',
         contact_mobile: '',
         extra_contacts: [],
+        sector: '', city: '', district: '', address: '', company_phone: '', website: '',
         source: 'website',
         status: 'new',
         score: 50,
@@ -227,8 +233,9 @@ export default function LeadsPage() {
       let { error } = await write(payload);
       if (error && LEAD_NEW_COLS.test(error.message) && /column|schema cache/i.test(error.message)) {
         const { extra_contacts, contact_mobile, ...rest } = payload;
+        ORG_COLS.forEach(k => delete rest[k]);
         ({ error } = await write(rest));
-        if (!error && (extras.length || contact_mobile)) alert('Kaydedildi, ancak ek yetkililer ve mobil telefon için veritabanı alanı henüz yok (lead-yetkililer.sql çalıştırılmalı).');
+        if (!error) alert('Kaydedildi, ancak ek yetkililer, mobil telefon ve kurum adres alanları veritabanında henüz yok (lead-kurum-adres.sql çalıştırılmalı).');
       }
       if (error) {
         console.error('Lead kayıt hatası:', error);
@@ -279,7 +286,8 @@ export default function LeadsPage() {
           contact_person: lead.contact_name,
           contact_title: lead.contact_title,
           email: lead.contact_email,
-          phone: lead.contact_phone,
+          phone: lead.company_phone || lead.contact_phone || lead.contact_mobile,
+          sector: lead.sector, city: lead.city, district: lead.district, address: lead.address,
           assigned_to: lead.assigned_to || null,
           source: lead.source,
           status: 'Aktif',
@@ -289,6 +297,7 @@ export default function LeadsPage() {
         })]).select('id').single();
         if (error) throw error;
         customerId = cust.id;
+        if (lead.website) await supabase.from('customers').update({ website: lead.website }).eq('id', customerId); // alan yoksa sessizce geçer
       }
 
       // 1b. Yetkilileri müşterinin kişilerine aktar (ana kişi + ek yetkililer; mevcut müşteride aynı isim atlanır)
@@ -500,7 +509,7 @@ export default function LeadsPage() {
                       <tr key={lead.id} className="border-b hover:bg-slate-50">
                         <td className="px-4 py-3">
                           <p className="font-medium text-slate-900">{lead.company_name}</p>
-                          <p className="text-xs text-slate-500">{formatDate(lead.created_at)}</p>
+                          <p className="text-xs text-slate-500">{[[lead.district, lead.city].filter(Boolean).join(' / '), lead.sector, formatDate(lead.created_at)].filter(Boolean).join(' · ')}</p>
                         </td>
                         <td className="px-4 py-3">
                           <p className="text-slate-900">{lead.contact_name || '-'}</p>
@@ -598,6 +607,26 @@ export default function LeadsPage() {
             onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
             placeholder="ABC Teknoloji Ltd."
           />
+
+          <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-indigo-600" />
+              <p className="text-sm font-semibold text-slate-700">Kurum bilgileri</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <SectorSelect value={formData.sector} onChange={(v) => setFormData({ ...formData, sector: v })} />
+              <Input label="Web sitesi" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="www.firma.com.tr" />
+              <CitySelect label="İl" value={formData.city} onChange={(v) => setFormData({ ...formData, city: v, district: v === formData.city ? formData.district : '' })} />
+              <DistrictSelect city={formData.city} value={formData.district} onChange={(v) => setFormData({ ...formData, district: v })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Açık adres</label>
+              <textarea rows={2} value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Mahalle, cadde/sokak, bina no"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" />
+            </div>
+            <Input label="Kurum telefonu (santral)" type="tel" value={formData.company_phone} onChange={(e) => setFormData({ ...formData, company_phone: e.target.value })} placeholder="0216 111 22 33" />
+          </div>
 
           <div className="space-y-3 rounded-lg border border-slate-200 p-3">
             <div className="flex items-center gap-2">
