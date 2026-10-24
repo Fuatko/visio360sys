@@ -3,7 +3,7 @@
 import Header from '@/components/Header';
 import { Card, CardBody, Button, Badge, Modal, Input, Select, EmptyState } from '@/components/ui';
 import { formatDate , cleanPayload } from '@/lib/utils';
-import { Users, Plus, Edit2, Trash2, Mail, Phone, MapPin, Calendar, RefreshCw, Camera, User } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Mail, Phone, MapPin, Calendar, RefreshCw, Camera, User, Smartphone } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { PARTNER_DEFAULTS, PAYMENT_CHANNELS, ATTRIBUTION_MODES, pickPartnerSettings, calcCommission, PartnerSettings } from '@/lib/partners';
@@ -15,6 +15,7 @@ interface TeamMember {
   name: string;
   email: string;
   phone: string;
+  mobile_phone?: string;
   title: string;
   region: string;
   avatar: string;
@@ -51,6 +52,7 @@ export default function TeamPage() {
     name: '',
     email: '',
     phone: '',
+    mobile_phone: '',
     title: '',
     region: '',
     avatar: '',
@@ -94,6 +96,7 @@ export default function TeamPage() {
         name: person.name,
         email: person.email,
         phone: person.phone || '',
+        mobile_phone: person.mobile_phone || '',
         title: person.title || '',
         region: person.region || '',
         avatar: person.avatar || '',
@@ -108,6 +111,7 @@ export default function TeamPage() {
         name: '',
         email: '',
         phone: '',
+        mobile_phone: '',
         title: '',
         region: '',
         avatar: '',
@@ -130,17 +134,25 @@ export default function TeamPage() {
     setSaving(true);
     try {
       if (editingPerson) {
-        const { error } = await supabase
+        let { error } = await supabase
           .from('sales_team')
           .update(cleanPayload(formData))
           .eq('id', editingPerson.id);
-        
+        if (error && /mobile_phone/.test(error.message)) {
+          const { mobile_phone, ...rest } = formData;
+          ({ error } = await supabase.from('sales_team').update(cleanPayload(rest)).eq('id', editingPerson.id));
+          if (!error && mobile_phone) alert('Kaydedildi, ancak mobil telefon için veritabanı alanı henüz yok (telefon-alanlari.sql çalıştırılmalı).');
+        }
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        let { error } = await supabase
           .from('sales_team')
           .insert(cleanPayload([formData]));
-        
+        if (error && /mobile_phone/.test(error.message)) {
+          const { mobile_phone, ...rest } = formData;
+          ({ error } = await supabase.from('sales_team').insert(cleanPayload([rest])));
+          if (!error && mobile_phone) alert('Kaydedildi, ancak mobil telefon için veritabanı alanı henüz yok (telefon-alanlari.sql çalıştırılmalı).');
+        }
         if (error) throw error;
       }
       
@@ -284,11 +296,17 @@ export default function TeamPage() {
                     <Mail className="h-4 w-4 text-slate-400" />
                     <span className="truncate">{person.email}</span>
                   </div>
+                  {person.mobile_phone && (
+                    <a href={`tel:${person.mobile_phone.replace(/\s/g, '')}`} className="flex items-center gap-2 text-sm text-slate-600 hover:text-indigo-600">
+                      <Smartphone className="h-4 w-4 text-slate-400" />
+                      {person.mobile_phone}
+                    </a>
+                  )}
                   {person.phone && (
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <a href={`tel:${person.phone.replace(/\s/g, '')}`} className="flex items-center gap-2 text-sm text-slate-600 hover:text-indigo-600">
                       <Phone className="h-4 w-4 text-slate-400" />
                       {person.phone}
-                    </div>
+                    </a>
                   )}
                   {person.start_date && (
                     <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -407,40 +425,50 @@ export default function TeamPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Telefon"
+              label="Mobil Telefon"
+              type="tel"
+              value={formData.mobile_phone}
+              onChange={(e) => setFormData({ ...formData, mobile_phone: e.target.value })}
+              placeholder="0532 111 22 33"
+            />
+            <Input
+              label="Telefon (sabit / dahili)"
+              type="tel"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="0532 111 2233"
+              placeholder="0216 111 22 33 / dahili 105"
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <TitleSelect
               value={formData.title}
               partner={formData.member_type === 'partner'}
               onChange={(v) => setFormData({ ...formData, title: v })}
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <RegionSelect
               value={formData.region}
               onChange={(v) => setFormData({ ...formData, region: v })}
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <Input
               label="Başlangıç Tarihi"
               type="date"
               value={formData.start_date}
               onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
             />
+            <Select
+              label="Durum"
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+              options={[
+                { value: 'active', label: 'Aktif' },
+                { value: 'inactive', label: 'Pasif' },
+              ]}
+            />
           </div>
-
-          <Select
-            label="Durum"
-            value={formData.status}
-            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-            options={[
-              { value: 'active', label: 'Aktif' },
-              { value: 'inactive', label: 'Pasif' },
-            ]}
-          />
           {formData.member_type === 'partner' && (() => {
             const preview = calcCommission(10000, formData as PartnerSettings);
             const num = (k: string) => (e: any) => setFormData({ ...formData, [k]: parseFloat(e.target.value) || 0 });
