@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { PARTNER_DEFAULTS, PAYMENT_CHANNELS, ATTRIBUTION_MODES, pickPartnerSettings, calcCommission, PartnerSettings } from '@/lib/partners';
 import { formatMoney } from '@/lib/utils';
-import { RegionSelect, TitleSelect } from '@/components/TrSelects';
+import { RegionSelect, TitleSelect, CitySelect, DistrictSelect } from '@/components/TrSelects';
 
 interface TeamMember {
   id: string;
@@ -16,6 +16,9 @@ interface TeamMember {
   email: string;
   phone: string;
   mobile_phone?: string;
+  city?: string;
+  district?: string;
+  address?: string;
   title: string;
   region: string;
   avatar: string;
@@ -30,6 +33,11 @@ interface TeamMember {
 }
 
 // Pastel renk paleti - her kişiye farklı renk
+// ekip-iletisim-adres.sql çalıştırılmadıysa yeni alanlar olmadan kaydet
+const NEW_COLS = /mobile_phone|city|district|address/;
+const withoutNewCols = ({ mobile_phone, city, district, address, ...rest }: any) => rest;
+const MISSING_COLS_MSG = 'Kaydedildi, ancak mobil telefon ve adres alanları veritabanında henüz yok (ekip-iletisim-adres.sql çalıştırılmalı).';
+
 const cardColors = [
   'from-slate-500/90 to-slate-600/90',
   'from-indigo-400/90 to-indigo-500/90',
@@ -53,6 +61,9 @@ export default function TeamPage() {
     email: '',
     phone: '',
     mobile_phone: '',
+    city: '',
+    district: '',
+    address: '',
     title: '',
     region: '',
     avatar: '',
@@ -97,6 +108,9 @@ export default function TeamPage() {
         email: person.email,
         phone: person.phone || '',
         mobile_phone: person.mobile_phone || '',
+        city: person.city || '',
+        district: person.district || '',
+        address: person.address || '',
         title: person.title || '',
         region: person.region || '',
         avatar: person.avatar || '',
@@ -112,6 +126,9 @@ export default function TeamPage() {
         email: '',
         phone: '',
         mobile_phone: '',
+        city: '',
+        district: '',
+        address: '',
         title: '',
         region: '',
         avatar: '',
@@ -138,20 +155,18 @@ export default function TeamPage() {
           .from('sales_team')
           .update(cleanPayload(formData))
           .eq('id', editingPerson.id);
-        if (error && /mobile_phone/.test(error.message)) {
-          const { mobile_phone, ...rest } = formData;
-          ({ error } = await supabase.from('sales_team').update(cleanPayload(rest)).eq('id', editingPerson.id));
-          if (!error && mobile_phone) alert('Kaydedildi, ancak mobil telefon için veritabanı alanı henüz yok (telefon-alanlari.sql çalıştırılmalı).');
+        if (error && NEW_COLS.test(error.message) && /column|schema cache/i.test(error.message)) {
+          ({ error } = await supabase.from('sales_team').update(cleanPayload(withoutNewCols(formData))).eq('id', editingPerson.id));
+          if (!error) alert(MISSING_COLS_MSG);
         }
         if (error) throw error;
       } else {
         let { error } = await supabase
           .from('sales_team')
           .insert(cleanPayload([formData]));
-        if (error && /mobile_phone/.test(error.message)) {
-          const { mobile_phone, ...rest } = formData;
-          ({ error } = await supabase.from('sales_team').insert(cleanPayload([rest])));
-          if (!error && mobile_phone) alert('Kaydedildi, ancak mobil telefon için veritabanı alanı henüz yok (telefon-alanlari.sql çalıştırılmalı).');
+        if (error && NEW_COLS.test(error.message) && /column|schema cache/i.test(error.message)) {
+          ({ error } = await supabase.from('sales_team').insert(cleanPayload([withoutNewCols(formData)])));
+          if (!error) alert(MISSING_COLS_MSG);
         }
         if (error) throw error;
       }
@@ -307,6 +322,12 @@ export default function TeamPage() {
                       <Phone className="h-4 w-4 text-slate-400" />
                       {person.phone}
                     </a>
+                  )}
+                  {(person.city || person.district) && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600" title={person.address || ''}>
+                      <MapPin className="h-4 w-4 text-slate-400" />
+                      {[person.district, person.city].filter(Boolean).join(' / ')}
+                    </div>
                   )}
                   {person.start_date && (
                     <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -468,6 +489,20 @@ export default function TeamPage() {
                 { value: 'inactive', label: 'Pasif' },
               ]}
             />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+            <p className="text-xs font-semibold text-slate-600">Adres bilgileri</p>
+            <div className="grid grid-cols-2 gap-4">
+              <CitySelect label="İl" value={formData.city} onChange={(v) => setFormData({ ...formData, city: v, district: v === formData.city ? formData.district : '' })} />
+              <DistrictSelect city={formData.city} value={formData.district} onChange={(v) => setFormData({ ...formData, district: v })} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Açık adres</label>
+              <textarea rows={2} value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="Mahalle, cadde/sokak, bina no, daire"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" />
+            </div>
           </div>
           {formData.member_type === 'partner' && (() => {
             const preview = calcCommission(10000, formData as PartnerSettings);

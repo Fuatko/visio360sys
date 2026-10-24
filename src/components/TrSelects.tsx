@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ilceleri } from '@/lib/tr-ilceler';
 import { ILLER, sectorOptions, BOLGE_GENEL, COGRAFI_BOLGELER, UNVAN_CALISAN, UNVAN_ORTAK } from '@/lib/tr-data';
 
 const cls = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500';
@@ -68,6 +69,21 @@ export function TitleSelect({ label = 'Unvan', value, onChange, partner = false 
         <option value="__other">Diğer (yazın)</option>
       </select>
       {isCustom && <input autoFocus={custom} value={value} onChange={e => onChange(e.target.value)} placeholder="Unvanı yazın" className={`${cls} mt-1`} />}
+    </div>
+  );
+}
+
+// İlçe: seçilen ilin ilçeleri; il seçilmeden pasif. Listede olmayan eski değer korunur.
+export function DistrictSelect({ label = 'İlçe', city, value, onChange }: { label?: string; city: string; value: string; onChange: (v: string) => void }) {
+  const list = ilceleri(city);
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
+      <select value={value || ''} disabled={!city} onChange={e => onChange(e.target.value)} className={`${cls} disabled:bg-slate-50 disabled:text-slate-400`}>
+        <option value="">{city ? 'Seçiniz' : 'Önce il seçin'}</option>
+        {value && !list.includes(value) && <option value={value}>{value}</option>}
+        {list.map(d => <option key={d} value={d}>{d}</option>)}
+      </select>
     </div>
   );
 }
