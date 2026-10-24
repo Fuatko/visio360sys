@@ -3,10 +3,11 @@
 import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatDate, cleanPayload } from '@/lib/utils';
-import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building2, ArrowRight, Star, TrendingUp, Target, Sparkles } from 'lucide-react';
+import { UserPlus, Plus, Edit2, Trash2, RefreshCw, Search, Phone, Mail, Building2, ArrowRight, Star, TrendingUp, Target, Sparkles, X, Smartphone, Users } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import { BUYING_ROLES } from '@/lib/crm';
 import BantChecklist, { Bant, EMPTY_BANT, bantSuggestedProbability } from '@/components/BantChecklist';
 
 interface Lead {
@@ -16,6 +17,8 @@ interface Lead {
   contact_title?: string;
   contact_email: string;
   contact_phone: string;
+  contact_mobile?: string;
+  extra_contacts?: ExtraContact[];
   source: string;
   status: string;
   score: number;
@@ -26,6 +29,11 @@ interface Lead {
   created_at: string;
   last_contact?: string;
 }
+
+// Ek yetkililer (bir firmada birden fazla patron / karar verici olabilir)
+interface ExtraContact { full_name: string; title?: string; buying_role?: string; email?: string; mobile?: string; phone?: string }
+const EMPTY_CONTACT: ExtraContact = { full_name: '', title: '', buying_role: '', email: '', mobile: '', phone: '' };
+const LEAD_NEW_COLS = /extra_contacts|contact_mobile/;
 
 interface SalesPerson {
   id: string;
@@ -111,6 +119,8 @@ export default function LeadsPage() {
     contact_title: '',
     contact_email: '',
     contact_phone: '',
+    contact_mobile: '',
+    extra_contacts: [] as ExtraContact[],
     source: 'website',
     status: 'new',
     score: 50,
@@ -159,6 +169,8 @@ export default function LeadsPage() {
         contact_title: lead.contact_title || '',
         contact_email: lead.contact_email || '',
         contact_phone: lead.contact_phone || '',
+        contact_mobile: lead.contact_mobile || '',
+        extra_contacts: Array.isArray(lead.extra_contacts) ? lead.extra_contacts.map(c => ({ ...EMPTY_CONTACT, ...c })) : [],
         source: lead.source || 'website',
         status: lead.status || 'new',
         score: lead.score || 50,
@@ -176,6 +188,8 @@ export default function LeadsPage() {
         contact_title: '',
         contact_email: '',
         contact_phone: '',
+        contact_mobile: '',
+        extra_contacts: [],
         source: 'website',
         status: 'new',
         score: 50,
@@ -198,15 +212,24 @@ export default function LeadsPage() {
 
     setSaving(true);
     try {
-      const payload = cleanPayload({
+      const extras = formData.extra_contacts
+        .map(c => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]).filter(([, v]) => v)) as ExtraContact)
+        .filter(c => c.full_name);
+      const payload: any = cleanPayload({
         ...formData,
+        extra_contacts: extras,
         score: Number.isFinite(formData.score) ? formData.score : 50,
         estimated_value: Number.isFinite(formData.estimated_value) ? formData.estimated_value : 0,
       });
-      console.log('Lead kaydediliyor:', payload);
-      const { error } = editingLead
-        ? await supabase.from('leads').update(payload).eq('id', editingLead.id)
-        : await supabase.from('leads').insert([payload]);
+      const write = (p: any) => editingLead
+        ? supabase.from('leads').update(p).eq('id', editingLead.id)
+        : supabase.from('leads').insert([p]);
+      let { error } = await write(payload);
+      if (error && LEAD_NEW_COLS.test(error.message) && /column|schema cache/i.test(error.message)) {
+        const { extra_contacts, contact_mobile, ...rest } = payload;
+        ({ error } = await write(rest));
+        if (!error && (extras.length || contact_mobile)) alert('Kaydedildi, ancak ek yetkililer ve mobil telefon için veritabanı alanı henüz yok (lead-yetkililer.sql çalıştırılmalı).');
+      }
       if (error) {
         console.error('Lead kayıt hatası:', error);
         setSaveError(`${error.message}${error.details ? ' — ' + error.details : ''}${error.hint ? ' (' + error.hint + ')' : ''}`);
@@ -268,6 +291,21 @@ export default function LeadsPage() {
         customerId = cust.id;
       }
 
+      // 1b. Yetkilileri müşterinin kişilerine aktar (ana kişi + ek yetkililer; mevcut müşteride aynı isim atlanır)
+      {
+        const people = [
+          lead.contact_name ? { full_name: lead.contact_name, title: lead.contact_title, email: lead.contact_email, mobile: lead.contact_mobile, phone: lead.contact_phone, is_primary: !existingCustomer } : null,
+          ...((lead.extra_contacts || []) as ExtraContact[]).filter(c => c.full_name).map(c => ({ ...c, is_primary: false })),
+        ].filter(Boolean) as any[];
+        if (people.length) {
+          const { data: have } = await supabase.from('customer_contacts').select('full_name').eq('customer_id', customerId);
+          const seen = new Set((have || []).map((h: any) => String(h.full_name || '').trim().toLocaleLowerCase('tr')));
+          const rows = people.filter(p => !seen.has(String(p.full_name).trim().toLocaleLowerCase('tr')))
+            .map(p => cleanPayload({ customer_id: customerId, full_name: p.full_name, title: p.title || '', email: p.email || '', mobile: p.mobile || '', phone: p.phone || '', buying_role: p.buying_role || '', is_primary: !!p.is_primary }));
+          if (rows.length) { const { error } = await supabase.from('customer_contacts').insert(rows); if (error) console.warn('Yetkililer aktarılamadı:', error.message); }
+        }
+      }
+
       // 2. Fırsat (istenirse)
       if (convertWithOpp) {
         const { error } = await supabase.from('opportunities').insert([cleanPayload({
@@ -310,7 +348,8 @@ export default function LeadsPage() {
     const q = searchTerm.trim().toLowerCase();
     const matchSearch = !q ||
       (l.company_name || '').toLowerCase().includes(q) ||
-      (l.contact_name || '').toLowerCase().includes(q);
+      (l.contact_name || '').toLowerCase().includes(q) ||
+      (l.extra_contacts || []).some(c => (c.full_name || '').toLowerCase().includes(q));
     const matchStatus = !filterStatus || l.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -466,6 +505,11 @@ export default function LeadsPage() {
                         <td className="px-4 py-3">
                           <p className="text-slate-900">{lead.contact_name || '-'}</p>
                           {lead.contact_title && <p className="text-xs text-slate-400">{lead.contact_title}</p>}
+                          {(lead.extra_contacts || []).length > 0 && (
+                            <p className="text-xs text-indigo-600" title={(lead.extra_contacts || []).map(c => [c.full_name, c.title].filter(Boolean).join(' – ')).join('\n')}>
+                              +{lead.extra_contacts!.length} yetkili: {lead.extra_contacts!.map(c => c.full_name).join(', ')}
+                            </p>
+                          )}
                           <div className="flex items-center gap-3 mt-1">
                             {lead.contact_email && (
                               <span className="text-xs text-slate-500 flex items-center gap-1">
@@ -555,35 +599,54 @@ export default function LeadsPage() {
             placeholder="ABC Teknoloji Ltd."
           />
 
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="İletişim Kişisi"
-              value={formData.contact_name}
-              onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
-              placeholder="Ahmet Yılmaz"
-            />
-            <Input
-              label="Unvan / Görev Tanımı"
-              value={formData.contact_title}
-              onChange={(e) => setFormData({ ...formData, contact_title: e.target.value })}
-              placeholder="Genel Müdür, Satın Alma Müdürü..."
-            />
-            <Input
-              label="E-posta"
-              type="email"
-              value={formData.contact_email}
-              onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-              placeholder="ahmet@abc.com"
-            />
+          <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-indigo-600" />
+              <p className="text-sm font-semibold text-slate-700">Yetkililer</p>
+              <span className="text-xs text-slate-400">Ana kişi + diğer ortaklar, patronlar, karar vericiler</span>
+            </div>
+            <p className="flex items-center gap-1 text-xs font-medium text-slate-500"><Star className="h-3 w-3 fill-amber-400 text-amber-400" />Ana iletişim kişisi</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Ad Soyad" value={formData.contact_name} onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })} placeholder="Ahmet Yılmaz" />
+              <Input label="Unvan / Görev" value={formData.contact_title} onChange={(e) => setFormData({ ...formData, contact_title: e.target.value })} placeholder="Genel Müdür, Satın Alma Müdürü..." />
+              <Input label="E-posta" type="email" value={formData.contact_email} onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })} placeholder="ahmet@abc.com" />
+              <Input label="Mobil Telefon" type="tel" value={formData.contact_mobile} onChange={(e) => setFormData({ ...formData, contact_mobile: e.target.value })} placeholder="0532 111 22 33" />
+              <Input label="Telefon (sabit / dahili)" type="tel" value={formData.contact_phone} onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })} placeholder="0216 111 22 33" />
+            </div>
+
+            {formData.extra_contacts.map((c, i) => {
+              const set = (patch: Partial<ExtraContact>) => setFormData({ ...formData, extra_contacts: formData.extra_contacts.map((x, j) => j === i ? { ...x, ...patch } : x) });
+              const makePrimary = () => {
+                const old: ExtraContact = { full_name: formData.contact_name, title: formData.contact_title, email: formData.contact_email, mobile: formData.contact_mobile, phone: formData.contact_phone, buying_role: '' };
+                setFormData({ ...formData, contact_name: c.full_name, contact_title: c.title || '', contact_email: c.email || '', contact_mobile: c.mobile || '', contact_phone: c.phone || '',
+                  extra_contacts: formData.extra_contacts.map((x, j) => j === i ? old : x).filter(x => x.full_name || x.email || x.mobile || x.phone) });
+              };
+              return (
+                <div key={i} className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-medium text-slate-500">{i + 2}. yetkili</p>
+                    <span className="flex-1" />
+                    <button type="button" onClick={makePrimary} disabled={!c.full_name} className="flex items-center gap-1 text-xs text-slate-500 hover:text-amber-600 disabled:opacity-40"><Star className="h-3 w-3" />Ana kişi yap</button>
+                    <button type="button" onClick={() => setFormData({ ...formData, extra_contacts: formData.extra_contacts.filter((_, j) => j !== i) })} className="text-slate-400 hover:text-red-600" title="Kaldır"><X className="h-4 w-4" /></button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input label="Ad Soyad" value={c.full_name} onChange={(e) => set({ full_name: e.target.value })} placeholder="Mehmet Demir" />
+                    <Input label="Unvan / Görev" value={c.title || ''} onChange={(e) => set({ title: e.target.value })} placeholder="Ortak, Yönetim Kurulu Üyesi..." />
+                    <Select label="Satın almadaki rolü" value={c.buying_role || ''} onChange={(e) => set({ buying_role: e.target.value })}
+                      options={[{ value: '', label: 'Seçiniz' }, ...Object.entries(BUYING_ROLES).map(([value, r]) => ({ value, label: r.label }))]} />
+                    <Input label="E-posta" type="email" value={c.email || ''} onChange={(e) => set({ email: e.target.value })} />
+                    <Input label="Mobil Telefon" type="tel" value={c.mobile || ''} onChange={(e) => set({ mobile: e.target.value })} placeholder="0532 111 22 33" />
+                    <Input label="Telefon (sabit / dahili)" type="tel" value={c.phone || ''} onChange={(e) => set({ phone: e.target.value })} />
+                  </div>
+                </div>
+              );
+            })}
+            <Button type="button" size="sm" variant="secondary" onClick={() => setFormData({ ...formData, extra_contacts: [...formData.extra_contacts, { ...EMPTY_CONTACT }] })}>
+              <Plus className="h-4 w-4" />Yetkili ekle
+            </Button>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Telefon"
-              value={formData.contact_phone}
-              onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
-              placeholder="0532 111 2233"
-            />
             <Select
               label="Kaynak"
               value={formData.source}
