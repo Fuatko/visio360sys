@@ -28,3 +28,20 @@ export const sectorOptions = (current?: string | null) => {
   if (current && !list.includes(current)) list.unshift(current);
   return list;
 };
+
+// Ekip / iş ortağı bölgesi: genel seçenekler + coğrafi bölgeler + 81 il
+export const BOLGE_GENEL = ['Tüm Türkiye', 'İstanbul Anadolu', 'İstanbul Avrupa', 'Yurt dışı'];
+export const COGRAFI_BOLGELER = ['Marmara Bölgesi', 'Ege Bölgesi', 'Akdeniz Bölgesi', 'İç Anadolu Bölgesi', 'Karadeniz Bölgesi', 'Doğu Anadolu Bölgesi', 'Güneydoğu Anadolu Bölgesi'];
+
+// Unvan önerileri (listede yoksa "Diğer" ile yazılır)
+export const UNVAN_CALISAN = [
+  'Satış Uzmanı', 'Kıdemli Satış Uzmanı', 'Satış Temsilcisi', 'Saha Satış Temsilcisi', 'Müşteri Temsilcisi',
+  'Kurumsal Satış Yöneticisi', 'Kilit Müşteri Yöneticisi', 'Bölge Satış Müdürü', 'Satış Müdürü', 'Satış Direktörü',
+  'İş Geliştirme Uzmanı', 'İş Geliştirme Müdürü', 'Teknik Satış Uzmanı', 'Satış Destek Uzmanı', 'Satış Operasyon Uzmanı',
+  'Tahsilat Uzmanı', 'Genel Müdür', 'Genel Müdür Yardımcısı',
+];
+export const UNVAN_ORTAK = [
+  'İş Ortağı', 'Stratejik İş Ortağı', 'Çözüm Ortağı', 'Satış Ortağı', 'Referans Ortağı',
+  'Yetkili Bayi', 'Bayi', 'Distribütör', 'Acente / Temsilci', 'Yetkili Servis',
+  'Danışman', 'Bağımsız Danışman', 'Eğitmen',
+];

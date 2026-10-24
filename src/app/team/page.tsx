@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import { PARTNER_DEFAULTS, PAYMENT_CHANNELS, ATTRIBUTION_MODES, pickPartnerSettings, calcCommission, PartnerSettings } from '@/lib/partners';
 import { formatMoney } from '@/lib/utils';
+import { RegionSelect, TitleSelect } from '@/components/TrSelects';
 
 interface TeamMember {
   id: string;
@@ -341,7 +342,7 @@ export default function TeamPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2">
             {[['employee', 'Çalışan'], ['partner', 'İş Ortağı']].map(([k, l]) => (
-              <button key={k} type="button" onClick={() => setFormData({ ...formData, member_type: k })}
+              <button key={k} type="button" onClick={() => setFormData({ ...formData, member_type: k, title: !formData.title || formData.title === 'İş Ortağı' || formData.title === 'Satış Uzmanı' ? (k === 'partner' ? 'İş Ortağı' : formData.title === 'İş Ortağı' ? '' : formData.title) : formData.title })}
                 className={`rounded-lg border px-3 py-2 text-sm ${formData.member_type === k ? 'border-indigo-500 bg-indigo-50 font-medium text-indigo-700' : 'border-slate-200 text-slate-600'}`}>
                 {l}
               </button>
@@ -411,30 +412,17 @@ export default function TeamPage() {
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               placeholder="0532 111 2233"
             />
-            <Input
-              label="Unvan"
+            <TitleSelect
               value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              placeholder="Satış Uzmanı"
+              partner={formData.member_type === 'partner'}
+              onChange={(v) => setFormData({ ...formData, title: v })}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Select
-              label="Bölge"
+            <RegionSelect
               value={formData.region}
-              onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-              options={[
-                { value: '', label: 'Seçiniz' },
-                { value: 'İstanbul Anadolu', label: 'İstanbul Anadolu' },
-                { value: 'İstanbul Avrupa', label: 'İstanbul Avrupa' },
-                { value: 'Ankara', label: 'Ankara' },
-                { value: 'İzmir', label: 'İzmir' },
-                { value: 'Bursa', label: 'Bursa' },
-                { value: 'Antalya', label: 'Antalya' },
-                { value: 'Adana', label: 'Adana' },
-                { value: 'Konya', label: 'Konya' },
-              ]}
+              onChange={(v) => setFormData({ ...formData, region: v })}
             />
             <Input
               label="Başlangıç Tarihi"
