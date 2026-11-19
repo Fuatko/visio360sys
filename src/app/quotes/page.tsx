@@ -51,6 +51,7 @@ interface Quote {
   decided_at?: string | null;
   history?: any[];
   customer?: { name: string };
+  customer_title?: string | null;
   subject: string;
   status: string;
   valid_until: string;
@@ -131,8 +132,9 @@ export default function QuotesPage() {
   
   const [formData, setFormData] = useState({
     customer_id: '',
+    customer_title: '',
     subject: '',
-    valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     notes: '',
     discount: 0,
   });
@@ -230,8 +232,9 @@ export default function QuotesPage() {
       setOpportunityLink({ id: opp.id, title: opp.title, assigned_to: opp.assigned_to, stage: opp.stage });
       setFormData({
         customer_id: opp.customer_id || '',
+        customer_title: '',
         subject: opp.title || '',
-        valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         notes: opp.notes || '',
         discount: 0,
       });
@@ -245,8 +248,9 @@ export default function QuotesPage() {
   const openModal = () => {
     setFormData({
       customer_id: '',
+      customer_title: '',
       subject: '',
-      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       notes: '',
       discount: 0,
     });
@@ -375,8 +379,9 @@ export default function QuotesPage() {
     const { data: qItems } = await supabase.from('quote_items').select('*').eq('quote_id', q.id);
     setFormData({
       customer_id: q.customer_id || '',
+      customer_title: (q as any).customer_title || '',
       subject: q.subject || '',
-      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       notes: q.notes || '',
       discount: Number(q.discount) || 0,
     });
@@ -471,6 +476,7 @@ export default function QuotesPage() {
         root_quote_id: rev ? (rev.root_quote_id || rev.id) : null,
         revision_reason: rev ? revisionReason.trim() : null,
         customer_id: formData.customer_id,
+        customer_title: formData.customer_title.trim() || null,
         subject: formData.subject,
         valid_until: formData.valid_until,
         notes: formData.notes,
@@ -915,6 +921,12 @@ export default function QuotesPage() {
               onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
             />
           </div>
+          <Input
+            label="Teklifte görünecek müşteri adı"
+            value={formData.customer_title}
+            onChange={(e) => setFormData({ ...formData, customer_title: e.target.value })}
+            placeholder={formData.customer_id ? (customers.find(c => c.id === formData.customer_id)?.name || '') : 'Boş bırakılırsa müşteri kartındaki ad kullanılır'}
+          />
 
           <DealerTermBar
             termDays={paymentTerm}
@@ -1097,7 +1109,10 @@ export default function QuotesPage() {
             {/* Müşteri Bilgileri */}
             <div>
               <p className="text-sm text-slate-500">Müşteri</p>
-              <p className="font-semibold text-lg">{selectedQuote.customer?.name}</p>
+              <p className="font-semibold text-lg">{selectedQuote.customer_title || selectedQuote.customer?.name}</p>
+              {selectedQuote.customer_title && selectedQuote.customer?.name && selectedQuote.customer_title !== selectedQuote.customer.name && (
+                <p className="text-xs text-slate-400">Sistem: {selectedQuote.customer?.name}</p>
+              )}
               {selectedQuote.subject && <p className="text-slate-600">{selectedQuote.subject}</p>}
             </div>
             {(selectedQuote as any).customer_response && (

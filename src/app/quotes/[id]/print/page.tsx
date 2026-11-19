@@ -125,7 +125,7 @@ export default function QuotePrintPage() {
         <div className="mt-5 grid grid-cols-2 gap-6">
           <div>
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Sayın</p>
-            <p className="text-[13px] font-semibold">{c.legal_name || c.name}</p>
+            <p className="text-[13px] font-semibold">{q.customer_title || c.legal_name || c.name}</p>
             {c.address && <p className="whitespace-pre-line text-[11px] text-slate-600">{c.address}</p>}
             {(c.district || c.city) && <p className="text-[11px] text-slate-600">{[c.district, c.city].filter(Boolean).join(' / ')}</p>}
             {(c.tax_office || c.tax_number) && <p className="text-[11px] text-slate-600">{c.tax_office ? `${c.tax_office} V.D. · ` : ''}{c.tax_number ? `VKN ${c.tax_number}` : ''}</p>}
