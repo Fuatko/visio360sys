@@ -136,7 +136,7 @@ export default function QuotePrintPage() {
         {/* Antet */}
         <div className="flex items-start justify-between gap-6 border-b-2 pb-4" style={{ borderColor: accent }}>
           <div className="flex items-center gap-4">
-            {logo && <img src={logo} alt="" className="max-h-16 max-w-[160px] object-contain" />}
+            {logo && <img src={logo} alt="" className="max-h-24 max-w-[230px] object-contain" />}
             <div>
               <p className="text-[15px] font-bold" style={{ color: accent }}>{company}</p>
               {lh.address && <p className="whitespace-pre-line text-[10.5px] text-slate-500">{lh.address}</p>}
@@ -224,7 +224,20 @@ export default function QuotePrintPage() {
           </div>
           {q.extra_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Bu teklife özel şartlar</p><p className="whitespace-pre-wrap text-slate-700">{q.extra_terms}</p></div>}
           {q.notes && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Notlar</p><p className="whitespace-pre-wrap text-slate-700">{q.notes}</p></div>}
-          {(q.standard_terms_override || lh.standard_terms) && !q.hide_standard_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Genel şartlar</p><p className="whitespace-pre-wrap text-[10.5px] text-slate-600">{q.standard_terms_override || lh.standard_terms}</p></div>}
+          {(() => {
+            const terms = !q.hide_standard_terms ? (q.standard_terms_override || lh.standard_terms) : '';
+            // ISO 9001:2015 md. 8.2.3 — yalnızca "Gözden Geçir" adımından geçmiş tekliflerde (gerçek kayda dayanır)
+            const iso = q.reviewed_at
+              ? `Bu teklif, ISO 9001:2015 Kalite Yönetim Sistemi standardının 8.2.3 maddesi (Ürün ve hizmetlere ilişkin şartların gözden geçirilmesi) kapsamında hazırlanmış; müşteri şartları, uygulanabilir yasal ve mevzuat şartları ile kuruluşumuzun bu şartları karşılama yeterliliği${q.reviewed_by_name ? ` ${q.reviewed_by_name} tarafından` : ''} ${new Date(q.reviewed_at).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })} tarihinde gözden geçirilerek onaylanmıştır.`
+              : '';
+            if (!terms && !iso) return <p className="text-[10px] text-slate-400 print:hidden">ISO 9001 md. 8.2.3 gözden geçirme ifadesi, teklif listede "Gözden Geçir" adımından geçince Genel şartlar altında otomatik görünür.</p>;
+            return (
+              <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Genel şartlar</p>
+                {terms && <p className="whitespace-pre-wrap text-[10.5px] text-slate-600">{terms}</p>}
+                {iso && <p className="mt-1.5 flex gap-1.5 text-[10.5px] text-slate-700"><span>•</span><span>{iso}</span></p>}
+                {!iso && <p className="mt-1 text-[10px] text-slate-400 print:hidden">ISO 9001 md. 8.2.3 gözden geçirme ifadesi, teklif "Gözden Geçir" adımından geçince burada otomatik görünür.</p>}
+              </div>);
+          })()}
         </div>
 
         {/* İmza */}
