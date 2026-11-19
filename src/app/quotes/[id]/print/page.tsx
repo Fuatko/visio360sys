@@ -31,7 +31,7 @@ export default function QuotePrintPage() {
   const stampRef = useRef<HTMLInputElement>(null);
   const [orgName, setOrgName] = useState('');
   const [edit, setEdit] = useState(false);
-  const [docEdit, setDocEdit] = useState<(QuoteDoc & { valid_until: string }) | null>(null);
+  const [docEdit, setDocEdit] = useState<(QuoteDoc & { valid_until: string; notes: string }) | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -70,8 +70,8 @@ export default function QuotePrintPage() {
   const saveDoc = async () => {
     if (!docEdit) return;
     setBusy(true);
-    const { valid_until, ...d } = docEdit;
-    const { error } = await supabase.from('quotes').update({ ...docPayload(d), valid_until }).eq('id', id);
+    const { valid_until, notes, ...d } = docEdit;
+    const { error } = await supabase.from('quotes').update({ ...docPayload(d), valid_until, notes: notes.trim() ? notes.replace(/\s+$/, '') : null }).eq('id', id);
     setBusy(false);
     if (error) { alert(isMissingDocCol(error.message) ? 'Bu alanlar için önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); return; }
     setDocEdit(null); load();
@@ -125,7 +125,7 @@ export default function QuotePrintPage() {
       <div className="mx-auto mb-4 flex max-w-[210mm] flex-wrap items-center gap-2 px-2 print:hidden">
         <p className="text-sm text-slate-600">Kurumsal teklif belgesi · yazdırma penceresinde <b>“PDF olarak kaydet”</b> seçin</p>
         <button disabled={['accepted', 'rejected', 'revised'].includes(q.status)} title={['accepted', 'rejected', 'revised'].includes(q.status) ? 'Sonuçlanmış teklif değiştirilemez; revizyon açın' : ''}
-          onClick={() => setDocEdit({ ...docFrom(q), valid_until: q.valid_until || '' })} className="ml-auto flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40"><FileSignature className="h-4 w-4" />Bu teklifin ad / onay / koşulları</button>
+          onClick={() => setDocEdit({ ...docFrom(q), valid_until: q.valid_until || '', notes: q.notes || '' })} className="ml-auto flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40"><FileSignature className="h-4 w-4" />Bu teklifin ad / notlar / koşulları</button>
         <button onClick={() => setEdit(true)} className="flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"><Settings2 className="h-4 w-4" />Antet bilgileri</button>
         <button onClick={() => window.print()} className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: accent }}><Printer className="h-4 w-4" />PDF indir / Yazdır</button>
       </div>
@@ -241,6 +241,9 @@ export default function QuotePrintPage() {
             <div className="flex items-center"><p className="font-semibold">Bu teklifin ad, onay ve koşulları</p><button onClick={() => setDocEdit(null)} className="ml-auto text-slate-400"><X className="h-5 w-5" /></button></div>
             {q.status === 'sent' && <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">Teklif müşteriye gönderilmiş durumda: değişiklik, müşterinin açtığı online teklif sayfasında da hemen görünür. Fiyat / kalem değişikliği için revizyon açın.</p>}
             <div className="max-w-xs"><ValidityPicker value={docEdit.valid_until} from={q.sent_at || q.created_at} onChange={(v) => setDocEdit({ ...docEdit, valid_until: v })} /></div>
+            <div><label className="text-sm font-medium text-slate-700">Notlar</label>
+              <textarea rows={6} value={docEdit.notes} onChange={(e) => setDocEdit({ ...docEdit, notes: e.target.value })} placeholder="Teklifte 'Notlar' başlığı altında görünür; boş bırakırsanız bölüm kalkar."
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500" /></div>
             <QuoteDocFields supabase={supabase} customerId={q.customer_id} value={docEdit} defaultOpen defaultSigner={{ name: lh.signer_name || q.rep?.name, title: lh.signer_title || q.rep?.title }}
               onChange={(p) => setDocEdit({ ...docEdit, ...p })} />
             <div className="flex justify-end gap-2"><button onClick={() => setDocEdit(null)} className="rounded-lg border px-4 py-2 text-sm">Vazgeç</button><button disabled={busy} onClick={saveDoc} className="rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: accent }}>{busy ? 'Kaydediliyor…' : 'Kaydet'}</button></div>
