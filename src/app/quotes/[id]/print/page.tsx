@@ -35,6 +35,11 @@ export default function QuotePrintPage() {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const embedImage = async (path: string): Promise<string | null> => {
+    const { data, error } = await supabase.storage.from('quote-files').download(path);
+    if (error || !data) { const s = await supabase.storage.from('quote-files').createSignedUrl(path, 3600); return s.data?.signedUrl || null; }
+    return await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => res(null); r.readAsDataURL(data); });
+  };
   const load = useCallback(async () => {
     const { data: quote } = await supabase.from('quotes').select('*, customer:customer_id(*)').eq('id', id).maybeSingle();
     if (!quote) { setQ(null); return; }
@@ -46,8 +51,9 @@ export default function QuotePrintPage() {
     setLhReady(!(l as any).error);
     const letter = (l as any).data || {};
     setLh(letter);
-    if (letter.logo_path) { const { data } = await supabase.storage.from('quote-files').createSignedUrl(letter.logo_path, 3600); setLogo(data?.signedUrl || null); }
-    if (letter.stamp_path) { const { data } = await supabase.storage.from('quote-files').createSignedUrl(letter.stamp_path, 3600); setStamp(data?.signedUrl || null); }
+    // Logo ve kaşe belgeye gömülür (data URL): yazdırma / PDF'e kaydetmede geçici bağlantılı görseller basılmayabiliyor
+    if (letter.logo_path) setLogo(await embedImage(letter.logo_path));
+    if (letter.stamp_path) setStamp(await embedImage(letter.stamp_path));
     const { data: org } = await supabase.from('organizations').select('name').eq('id', quote.organization_id).maybeSingle();
     setOrgName(org?.name || '');
     // Kaydedilen PDF'in adı ve sekme başlığı: teklif numarası (+ müşteri)
@@ -101,7 +107,7 @@ export default function QuotePrintPage() {
       const { error } = await supabase.storage.from('quote-files').upload(path, f, { contentType: f.type });
       if (error) throw error;
       setLh({ ...lh, stamp_path: path });
-      const { data } = await supabase.storage.from('quote-files').createSignedUrl(path, 3600); setStamp(data?.signedUrl || null);
+      setStamp(await embedImage(path));
     } catch (e: any) { alert(e.message); } finally { setBusy(false); }
   };
   const uploadLogo = async (f?: File) => {
@@ -266,7 +272,7 @@ export default function QuotePrintPage() {
 
         {/* İmza */}
         <div className="mt-10 grid grid-cols-2 gap-10 text-[11px]" style={{ breakInside: 'avoid' }}>
-          <div><p className="text-slate-500">Teklifi veren</p><p className="mt-1 font-semibold">{company}</p><p>{q.signer_name || lh.signer_name || q.rep?.name || ''}</p><p className="text-slate-500">{q.signer_name ? (q.signer_title || '') : (lh.signer_title || q.rep?.title || '')}</p>{q.show_stamp && stamp ? <img src={stamp} alt="Kaşe ve imza" className="mt-1 max-h-[38mm] max-w-[70mm] object-contain" /> : <div className="mt-10" />}<div className="border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
+          <div><p className="text-slate-500">Teklifi veren</p><p className="mt-1 font-semibold">{company}</p><p>{q.signer_name || lh.signer_name || q.rep?.name || ''}</p><p className="text-slate-500">{q.signer_name ? (q.signer_title || '') : (lh.signer_title || q.rep?.title || '')}</p>{q.show_stamp && stamp ? <img src={stamp} alt="Kaşe ve imza" style={{ height: '30mm', width: 'auto', maxWidth: '70mm', display: 'block' }} className="mt-1" /> : <div className="mt-10" />}<div className="border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
           <div><p className="text-slate-500">Teklifi kabul eden</p><p className="mt-1 font-semibold">{q.acceptor_title || q.customer_title || c.legal_name || c.name}</p><p className="text-slate-500">Ad soyad / unvan / tarih</p><div className="mt-[52px] border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
         </div>
         {q.share_token && ['sent', 'accepted', 'expired'].includes(q.status) && <p className="mt-8 text-center text-[9.5px] text-slate-400">Bu teklifi online görüntülemek ve onaylamak için: {typeof window !== 'undefined' ? window.location.origin : ''}/q/{q.share_token}</p>}
