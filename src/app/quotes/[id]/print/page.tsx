@@ -157,8 +157,8 @@ export default function QuotePrintPage() {
         {/* Müşteri ve temsilci */}
         <div className="mt-5 grid grid-cols-2 gap-6">
           <div>
-            <p className="text-[13px] font-semibold">{q.customer_title || c.legal_name || c.name}</p>
-            {q.attention_to && <p className="text-[11.5px] font-medium text-slate-800">{q.attention_to}</p>}
+            <p className="text-[17px] font-bold leading-snug tracking-tight text-slate-900">{q.customer_title || c.legal_name || c.name}</p>
+            {q.attention_to && <p className="mt-0.5 text-[12px] font-semibold text-slate-800">{q.attention_to}</p>}
             {q.attention_title && <p className="text-[11px] text-slate-600">{q.attention_title}</p>}
             {q.recipient_address ? <p className="mt-1 whitespace-pre-line text-[11px] text-slate-600">{q.recipient_address}</p> : (<>
               {c.address && <p className="mt-1 whitespace-pre-line text-[11px] text-slate-600">{c.address}</p>}
