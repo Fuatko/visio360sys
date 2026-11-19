@@ -134,7 +134,7 @@ export default function QuotesPage() {
   const [fxReady, setFxReady] = useState(false);   // doviz.sql kurulu mu
   
   const [doc, setDoc] = useState<QuoteDoc>(EMPTY_DOC);
-  const [docEdit, setDocEdit] = useState<(QuoteDoc & { valid_until: string; notes: string }) | null>(null);
+  const [docEdit, setDocEdit] = useState<(QuoteDoc & { valid_until: string; notes: string; subject: string }) | null>(null);
   const [formData, setFormData] = useState({
     customer_id: '',
     subject: '',
@@ -1108,7 +1108,7 @@ export default function QuotesPage() {
                   {sq.recipient_address && <p className="mt-1 whitespace-pre-line text-xs text-slate-500">{sq.recipient_address}</p>}
                   {selectedQuote.subject && <p className="mt-1 text-slate-600">{selectedQuote.subject}</p>}
                 </div>
-                {editable && !docEdit && <Button size="sm" variant="secondary" className="print:hidden" onClick={() => setDocEdit({ ...docFrom(sq), valid_until: sq.valid_until || '', notes: sq.notes || '' })}>Ad, ilgili kişi, notlar ve koşulları düzenle</Button>}
+                {editable && !docEdit && <Button size="sm" variant="secondary" className="print:hidden" onClick={() => setDocEdit({ ...docFrom(sq), valid_until: sq.valid_until || '', notes: sq.notes || '', subject: sq.subject || '' })}>Konu, ad, ilgili kişi, notlar ve koşulları düzenle</Button>}
               </div>
               {(sq.acceptor_title || sq.signer_name) && (
                 <div className="grid gap-2 text-sm sm:grid-cols-2">
@@ -1120,6 +1120,9 @@ export default function QuotesPage() {
                 <div className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 print:hidden">
                   {sq.status === 'sent' && <p className="text-xs text-amber-800">Teklif müşteriye gönderilmiş: değişiklik online teklif sayfasında da hemen görünür. Fiyat / kalem değişikliği için revizyon açın.</p>}
                   <div className="max-w-xs"><ValidityPicker value={docEdit.valid_until} from={sq.sent_at || sq.created_at} onChange={(v) => setDocEdit({ ...docEdit, valid_until: v })} /></div>
+                  <div><label className="text-sm font-medium text-slate-700">Konu</label>
+                    <input value={docEdit.subject} onChange={(e) => setDocEdit({ ...docEdit, subject: e.target.value })} placeholder="Teklifin konusu"
+                      className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-500" /></div>
                   <div><label className="text-sm font-medium text-slate-700">Notlar</label>
                     <textarea rows={6} value={docEdit.notes} onChange={(e) => setDocEdit({ ...docEdit, notes: e.target.value })} placeholder="Teklifte 'Notlar' başlığı altında görünür; boş bırakırsanız bölüm kalkar."
                       className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500" /></div>
@@ -1127,8 +1130,8 @@ export default function QuotesPage() {
                   <div className="flex justify-end gap-2">
                     <Button size="sm" variant="secondary" onClick={() => setDocEdit(null)}>Vazgeç</Button>
                     <Button size="sm" onClick={async () => {
-                      const { valid_until, notes, ...d } = docEdit;
-                      const patch = { ...docPayload(d), valid_until, notes: notes.trim() ? notes.replace(/\s+$/, '') : null };
+                      const { valid_until, notes, subject, ...d } = docEdit;
+                      const patch = { ...docPayload(d), valid_until, notes: notes.trim() ? notes.replace(/\s+$/, '') : null, subject: subject.trim() };
                       const { error } = await supabase.from('quotes').update(patch).eq('id', sq.id);
                       if (error) { alert(isMissingDocCol(error.message) ? 'Önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); return; }
                       setSelectedQuote({ ...sq, ...patch }); setDocEdit(null); fetchData();
