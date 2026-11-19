@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import { Printer, Settings2, X, Upload, Loader2 } from 'lucide-react';
+import { Printer, Settings2, X, Upload, Loader2, FileSignature } from 'lucide-react';
 import { orgIdOf } from '@/lib/quote-files';
+import QuoteDocFields, { ValidityPicker } from '@/components/quotes/QuoteDocFields';
+import { QuoteDoc, docFrom, docPayload, isMissingDocCol } from '@/lib/quote-doc';
 
 const n = (v: any) => Number(v) || 0;
 const SYM: Record<string, string> = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
@@ -27,6 +29,7 @@ export default function QuotePrintPage() {
   const [logo, setLogo] = useState<string | null>(null);
   const [orgName, setOrgName] = useState('');
   const [edit, setEdit] = useState(false);
+  const [docEdit, setDocEdit] = useState<(QuoteDoc & { valid_until: string }) | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -55,6 +58,15 @@ export default function QuotePrintPage() {
     const { error } = await supabase.from('quote_letterhead').upsert({ ...rest, organization_id: await orgIdOf(supabase), updated_at: new Date().toISOString() });
     setBusy(false);
     if (error) alert(error.message); else { setEdit(false); load(); }
+  };
+  const saveDoc = async () => {
+    if (!docEdit) return;
+    setBusy(true);
+    const { valid_until, ...d } = docEdit;
+    const { error } = await supabase.from('quotes').update({ ...docPayload(d), valid_until }).eq('id', id);
+    setBusy(false);
+    if (error) { alert(isMissingDocCol(error.message) ? 'Bu alanlar için önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); return; }
+    setDocEdit(null); load();
   };
   const uploadLogo = async (f?: File) => {
     if (!f) return;
@@ -93,7 +105,9 @@ export default function QuotePrintPage() {
 
       <div className="mx-auto mb-4 flex max-w-[210mm] flex-wrap items-center gap-2 px-2 print:hidden">
         <p className="text-sm text-slate-600">Kurumsal teklif belgesi · yazdırma penceresinde <b>“PDF olarak kaydet”</b> seçin</p>
-        <button onClick={() => setEdit(true)} className="ml-auto flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"><Settings2 className="h-4 w-4" />Antet bilgileri</button>
+        <button disabled={['accepted', 'rejected', 'revised'].includes(q.status)} title={['accepted', 'rejected', 'revised'].includes(q.status) ? 'Sonuçlanmış teklif değiştirilemez; revizyon açın' : ''}
+          onClick={() => setDocEdit({ ...docFrom(q), valid_until: q.valid_until || '' })} className="ml-auto flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40"><FileSignature className="h-4 w-4" />Bu teklifin ad / onay / koşulları</button>
+        <button onClick={() => setEdit(true)} className="flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"><Settings2 className="h-4 w-4" />Antet bilgileri</button>
         <button onClick={() => window.print()} className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: accent }}><Printer className="h-4 w-4" />PDF indir / Yazdır</button>
       </div>
       {!lhReady && <p className="mx-auto mb-3 max-w-[210mm] rounded bg-amber-50 p-2 text-xs text-amber-800 print:hidden">Antet ve logo için teklif-dosya.sql dosyasını Supabase'de çalıştırın.</p>}
@@ -125,7 +139,8 @@ export default function QuotePrintPage() {
         <div className="mt-5 grid grid-cols-2 gap-6">
           <div>
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Sayın</p>
-            <p className="text-[13px] font-semibold">{c.legal_name || c.name}</p>
+            <p className="text-[13px] font-semibold">{q.customer_title || c.legal_name || c.name}</p>
+            {q.attention_to && <p className="text-[11px] text-slate-700"><span className="text-slate-500">Dikkatine: </span>{q.attention_to}</p>}
             {c.address && <p className="whitespace-pre-line text-[11px] text-slate-600">{c.address}</p>}
             {(c.district || c.city) && <p className="text-[11px] text-slate-600">{[c.district, c.city].filter(Boolean).join(' / ')}</p>}
             {(c.tax_office || c.tax_number) && <p className="text-[11px] text-slate-600">{c.tax_office ? `${c.tax_office} V.D. · ` : ''}{c.tax_number ? `VKN ${c.tax_number}` : ''}</p>}
@@ -179,21 +194,35 @@ export default function QuotePrintPage() {
               <li>Teklif {fd(q.valid_until)} tarihine kadar geçerlidir.</li>
               {q.payment_term_days !== null && q.payment_term_days !== undefined && <li>Ödeme: {n(q.payment_term_days) === 0 ? 'peşin' : `fatura tarihinden itibaren ${q.payment_term_days} gün vadeli`}.</li>}
               <li>Fiyatlar {cur === 'TRY' ? 'Türk Lirası' : cur} cinsindendir; KDV ayrıca gösterilmiştir.</li>
+              {q.delivery_terms && <li>Teslim: {q.delivery_terms}</li>}
+              {q.warranty_terms && <li>Garanti: {q.warranty_terms}</li>}
               {lh.iban && <li>Banka: {lh.bank_name ? `${lh.bank_name} · ` : ''}IBAN {lh.iban} · {company}</li>}
             </ul>
           </div>
+          {q.extra_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Bu teklife özel şartlar</p><p className="whitespace-pre-wrap text-slate-700">{q.extra_terms}</p></div>}
           {q.notes && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Notlar</p><p className="whitespace-pre-wrap text-slate-700">{q.notes}</p></div>}
-          {lh.standard_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Genel şartlar</p><p className="whitespace-pre-wrap text-[10.5px] text-slate-600">{lh.standard_terms}</p></div>}
+          {lh.standard_terms && !q.hide_standard_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Genel şartlar</p><p className="whitespace-pre-wrap text-[10.5px] text-slate-600">{lh.standard_terms}</p></div>}
         </div>
 
         {/* İmza */}
         <div className="mt-10 grid grid-cols-2 gap-10 text-[11px]" style={{ breakInside: 'avoid' }}>
-          <div><p className="text-slate-500">Teklifi veren</p><p className="mt-1 font-semibold">{company}</p><p>{lh.signer_name || q.rep?.name || ''}</p><p className="text-slate-500">{lh.signer_title || q.rep?.title || ''}</p><div className="mt-10 border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
-          <div><p className="text-slate-500">Teklifi kabul eden</p><p className="mt-1 font-semibold">{c.legal_name || c.name}</p><p className="text-slate-500">Ad soyad / unvan / tarih</p><div className="mt-[52px] border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
+          <div><p className="text-slate-500">Teklifi veren</p><p className="mt-1 font-semibold">{company}</p><p>{q.signer_name || lh.signer_name || q.rep?.name || ''}</p><p className="text-slate-500">{q.signer_name ? (q.signer_title || '') : (lh.signer_title || q.rep?.title || '')}</p><div className="mt-10 border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
+          <div><p className="text-slate-500">Teklifi kabul eden</p><p className="mt-1 font-semibold">{q.acceptor_title || q.customer_title || c.legal_name || c.name}</p><p className="text-slate-500">Ad soyad / unvan / tarih</p><div className="mt-[52px] border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
         </div>
         {q.share_token && ['sent', 'accepted', 'expired'].includes(q.status) && <p className="mt-8 text-center text-[9.5px] text-slate-400">Bu teklifi online görüntülemek ve onaylamak için: {typeof window !== 'undefined' ? window.location.origin : ''}/q/{q.share_token}</p>}
       </div>
 
+      {docEdit && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6 print:hidden">
+          <div className="w-full max-w-3xl space-y-3 rounded-xl bg-white p-5 shadow-xl">
+            <div className="flex items-center"><p className="font-semibold">Bu teklifin ad, onay ve koşulları</p><button onClick={() => setDocEdit(null)} className="ml-auto text-slate-400"><X className="h-5 w-5" /></button></div>
+            {q.status === 'sent' && <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">Teklif müşteriye gönderilmiş durumda: değişiklik, müşterinin açtığı online teklif sayfasında da hemen görünür. Fiyat / kalem değişikliği için revizyon açın.</p>}
+            <div className="max-w-xs"><ValidityPicker value={docEdit.valid_until} from={q.sent_at || q.created_at} onChange={(v) => setDocEdit({ ...docEdit, valid_until: v })} /></div>
+            <QuoteDocFields supabase={supabase} customerId={q.customer_id} value={docEdit} defaultOpen defaultSigner={{ name: lh.signer_name || q.rep?.name, title: lh.signer_title || q.rep?.title }}
+              onChange={(p) => setDocEdit({ ...docEdit, ...p })} />
+            <div className="flex justify-end gap-2"><button onClick={() => setDocEdit(null)} className="rounded-lg border px-4 py-2 text-sm">Vazgeç</button><button disabled={busy} onClick={saveDoc} className="rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: accent }}>{busy ? 'Kaydediliyor…' : 'Kaydet'}</button></div>
+          </div>
+        </div>)}
       {edit && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-6 print:hidden">
           <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">

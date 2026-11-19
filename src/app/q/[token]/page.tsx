@@ -72,6 +72,12 @@ export default function PublicQuotePage() {
     if (!error && data) {
       const { data: c } = await supabase.rpc('public_quote_currency', { p_token: token });
       if (c) { CUR = c.currency || 'TRY'; setFxInfo(c); }
+      // Teklife özel hitap / onay / koşullar (teklif-ozellestirme.sql; yoksa sessizce geçilir)
+      const { data: d } = await supabase.rpc('public_quote_doc', { p_token: token });
+      if (d) {
+        data.doc = d;
+        if (d.attention_to) { const [nm, ...t] = String(d.attention_to).split(/\s+[–-]\s+/); setForm(f => f.name || f.title ? f : { ...f, name: nm, title: t.join(' - ') }); }
+      }
     }
     setQ(error ? null : data && !data.view_id && viewId.current ? { ...data, view_id: viewId.current } : data);
   };
@@ -148,7 +154,7 @@ export default function PublicQuotePage() {
 
           <div className="space-y-5 p-6">
             <div className="flex flex-wrap justify-between gap-4 text-sm">
-              <div><p className="text-xs text-slate-500">Sayın</p><p className="text-base font-semibold">{q.customer}</p></div>
+              <div><p className="text-xs text-slate-500">Sayın</p><p className="text-base font-semibold">{q.doc?.customer_title || q.customer}</p>{q.doc?.attention_to && <p className="text-sm text-slate-600"><span className="text-slate-500">Dikkatine: </span>{q.doc.attention_to}</p>}</div>
               {q.sales_rep && (
                 <div className="text-right">
                   <p className="text-xs text-slate-500">Temsilciniz</p>
@@ -186,6 +192,14 @@ export default function PublicQuotePage() {
               {q.payment_term_days !== null && q.payment_term_days !== undefined && <p className="text-right text-xs text-slate-500">Ödeme: {n(q.payment_term_days) === 0 ? 'Peşin' : `${q.payment_term_days} gün vadeli`}</p>}
             </div>
 
+            {(q.doc?.delivery_terms || q.doc?.warranty_terms || q.doc?.extra_terms) && (
+              <div className="rounded-lg bg-slate-50 p-3 text-sm">
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Ticari koşullar</p>
+                {q.doc.delivery_terms && <p><span className="text-slate-500">Teslim: </span>{q.doc.delivery_terms}</p>}
+                {q.doc.warranty_terms && <p><span className="text-slate-500">Garanti: </span>{q.doc.warranty_terms}</p>}
+                {q.doc.extra_terms && <p className="mt-1 whitespace-pre-wrap">{q.doc.extra_terms}</p>}
+              </div>
+            )}
             {q.notes && <div className="rounded-lg bg-slate-50 p-3 text-sm"><p className="mb-1 text-xs font-semibold uppercase text-slate-500">Koşullar ve notlar</p><p className="whitespace-pre-wrap">{q.notes}</p></div>}
 
             {files.length > 0 && (
@@ -219,7 +233,7 @@ export default function PublicQuotePage() {
                       placeholder={mode === 'accepted' ? 'Not (isteğe bağlı): teslim adresi, sipariş no vb.' : mode === 'rejected' ? 'Kısaca nedenini paylaşır mısınız? *' : 'Neyin değişmesini istersiniz? *'} />
                     {mode === 'accepted' && (
                       <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={form.agree} onChange={e => setForm({ ...form, agree: e.target.checked })} />
-                        <span>{no} numaralı, {tl(n(q.total))} tutarlı teklifi ve koşullarını okudum; şirketim adına kabul etmeye yetkiliyim.</span></label>
+                        <span>{no} numaralı, {tl(n(q.total))} tutarlı teklifi ve koşullarını okudum; {q.doc?.acceptor_title || q.doc?.customer_title || q.customer || 'şirketim'} adına kabul etmeye yetkiliyim.</span></label>
                     )}
                     <div className="flex gap-2">
                       <button disabled={busy} onClick={submit} className={`rounded-lg px-4 py-2 font-medium text-white disabled:opacity-50 ${mode === 'accepted' ? 'bg-green-600' : mode === 'rejected' ? 'bg-red-600' : 'bg-indigo-600'}`}>{busy ? 'Gönderiliyor…' : 'Gönder'}</button>

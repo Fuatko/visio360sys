@@ -4,6 +4,8 @@ import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
 import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target, ClipboardCheck, GitBranch, History, ShieldCheck, Link2, Copy, MessageCircle, Mail, Settings2, ExternalLink } from 'lucide-react';
+import QuoteDocFields, { ValidityPicker } from '@/components/quotes/QuoteDocFields';
+import { EMPTY_DOC, QuoteDoc, docFrom, docPayload, isMissingDocCol, withoutDoc } from '@/lib/quote-doc';
 import { useState, useEffect } from 'react';
 import QuoteAttachments from '@/components/quotes/QuoteAttachments';
 import QuoteFromFile, { type ParsedQuote } from '@/components/quotes/QuoteFromFile';
@@ -51,6 +53,7 @@ interface Quote {
   decided_at?: string | null;
   history?: any[];
   customer?: { name: string };
+  customer_title?: string | null;
   subject: string;
   status: string;
   valid_until: string;
@@ -129,10 +132,11 @@ export default function QuotesPage() {
   const [fx, setFx] = useState<FxRates | null>(null);
   const [fxReady, setFxReady] = useState(false);   // doviz.sql kurulu mu
   
+  const [doc, setDoc] = useState<QuoteDoc>(EMPTY_DOC);
   const [formData, setFormData] = useState({
     customer_id: '',
     subject: '',
-    valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     notes: '',
     discount: 0,
   });
@@ -227,11 +231,12 @@ export default function QuotesPage() {
     (async () => {
       const { data: opp } = await supabase.from('opportunities').select('*').eq('id', oppId).single();
       if (!opp) return;
+      setDoc(EMPTY_DOC);
       setOpportunityLink({ id: opp.id, title: opp.title, assigned_to: opp.assigned_to, stage: opp.stage });
       setFormData({
         customer_id: opp.customer_id || '',
         subject: opp.title || '',
-        valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         notes: opp.notes || '',
         discount: 0,
       });
@@ -243,10 +248,11 @@ export default function QuotesPage() {
   }, []);
 
   const openModal = () => {
+    setDoc(EMPTY_DOC);
     setFormData({
       customer_id: '',
       subject: '',
-      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       notes: '',
       discount: 0,
     });
@@ -263,6 +269,7 @@ export default function QuotesPage() {
 
   // Word / PDF teklifinden okunan bilgilerle formu aç (fiyatlar belgedeki para biriminde kalır)
   const applyParsed = async (q: ParsedQuote) => {
+    setDoc(EMPTY_DOC);
     setFormData({ customer_id: q.customer_id, subject: q.subject || '', valid_until: q.valid_until || new Date(Date.now() + 30 * 864e5).toISOString().split('T')[0], notes: q.notes || '', discount: Number(q.discount) || 0 });
     setItems(q.items.length ? q.items.map(it => ({ ...it })) : [{ product_id: '', quantity: 1, unit_price: 0, discount: 0, tax_rate: 20 }]);
     setOpportunityLink(null); setRevisionSource(null); setRevisionReason('');
@@ -373,10 +380,11 @@ export default function QuotesPage() {
   // ---------- ISO 7.5.3: Revizyon ----------
   const startRevision = async (q: Quote) => {
     const { data: qItems } = await supabase.from('quote_items').select('*').eq('quote_id', q.id);
+    setDoc(docFrom(q));
     setFormData({
       customer_id: q.customer_id || '',
       subject: q.subject || '',
-      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       notes: q.notes || '',
       discount: Number(q.discount) || 0,
     });
@@ -480,17 +488,21 @@ export default function QuotesPage() {
         discount_amount: discountAmount,
         total,
         status: 'draft',
+        ...docPayload(doc),
         opportunity_id: rev ? (rev.opportunity_id || null) : (opportunityLink?.id || null),
         sales_person_id: rev ? (rev.sales_person_id || null) : (opportunityLink?.assigned_to || null),
         ...(fxReady ? { currency, exchange_rate: currency === 'TRY' ? 1 : exRate, rate_date: currency === 'TRY' ? null : rateDate, rate_note: currency === 'TRY' ? null : 'TCMB döviz satış' } : {}),
       };
 
-      const { data: quote, error } = await supabase
+      let { data: quote, error } = await supabase
         .from('quotes')
         .insert([quoteData])
         .select()
         .single();
-
+      if (error && isMissingDocCol(error.message)) {   // teklif-ozellestirme.sql henüz çalıştırılmadıysa
+        ({ data: quote, error } = await supabase.from('quotes').insert([withoutDoc(quoteData)]).select().single());
+        if (!error) alert('Teklif kaydedildi, ancak teklife özel ad / onay / koşul alanları veritabanında henüz yok (teklif-ozellestirme.sql çalıştırılmalı).');
+      }
       if (error) throw error;
 
       // Teklif kalemlerini ekle
@@ -908,13 +920,9 @@ export default function QuotesPage() {
                 ...customers.map(c => ({ value: c.id, label: c.name }))
               ]}
             />
-            <Input
-              label="Geçerlilik Tarihi"
-              type="date"
-              value={formData.valid_until}
-              onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-            />
+            <ValidityPicker value={formData.valid_until} onChange={(v) => setFormData({ ...formData, valid_until: v })} />
           </div>
+          <QuoteDocFields supabase={supabase} customerId={formData.customer_id} value={doc} onChange={(p) => setDoc(d => ({ ...d, ...p }))} />
 
           <DealerTermBar
             termDays={paymentTerm}
@@ -1097,7 +1105,10 @@ export default function QuotesPage() {
             {/* Müşteri Bilgileri */}
             <div>
               <p className="text-sm text-slate-500">Müşteri</p>
-              <p className="font-semibold text-lg">{selectedQuote.customer?.name}</p>
+              <p className="font-semibold text-lg">{selectedQuote.customer_title || selectedQuote.customer?.name}</p>
+              {selectedQuote.customer_title && selectedQuote.customer?.name && selectedQuote.customer_title !== selectedQuote.customer.name && (
+                <p className="text-xs text-slate-400">Sistem: {selectedQuote.customer?.name}</p>
+              )}
               {selectedQuote.subject && <p className="text-slate-600">{selectedQuote.subject}</p>}
             </div>
             {(selectedQuote as any).customer_response && (
