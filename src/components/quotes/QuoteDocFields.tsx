@@ -28,9 +28,9 @@ export function ValidityPicker({ value, onChange, from }: { value: string; onCha
  * Teklif belgesi ayarları: hitap adı / takma ad, dikkatine, kabul eden, imzalayan, ticari koşullar.
  * Müşteri kartını değiştirmez; yalnızca bu teklifte geçerlidir.
  */
-export default function QuoteDocFields({ supabase, customerId, value, onChange, defaultSigner, defaultOpen = false }: {
+export default function QuoteDocFields({ supabase, customerId, value, onChange, defaultSigner, defaultOpen = false, autoAttention = false }: {
   supabase: any; customerId: string; value: QuoteDoc; onChange: (patch: Partial<QuoteDoc>) => void;
-  defaultSigner?: { name?: string; title?: string }; defaultOpen?: boolean;
+  defaultSigner?: { name?: string; title?: string }; defaultOpen?: boolean; autoAttention?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen || !!(value.customer_title || value.attention_to || value.acceptor_title || value.signer_name || value.delivery_terms || value.warranty_terms || value.extra_terms));
   const [cust, setCust] = useState<any>(null);
@@ -45,7 +45,10 @@ export default function QuoteDocFields({ supabase, customerId, value, onChange, 
       if (r.error) r = await supabase.from('customers').select('name, legal_name').eq('id', customerId).maybeSingle();
       setCust(r.data || null);
       const c = await supabase.from('customer_contacts').select('full_name, title, is_primary, is_active').eq('customer_id', customerId);
-      setContacts((c.data || []).filter((x: any) => x.is_active !== false).sort((a: any, b: any) => Number(!!b.is_primary) - Number(!!a.is_primary)));
+      const list = (c.data || []).filter((x: any) => x.is_active !== false).sort((a: any, b: any) => Number(!!b.is_primary) - Number(!!a.is_primary));
+      setContacts(list);
+      // Yeni teklifte "Dikkatine" boşsa müşterinin ana kişisi önerilir (değiştirilebilir)
+      if (autoAttention && list[0] && !value.attention_to) onChange({ attention_to: list[0].title ? `${list[0].full_name} – ${list[0].title}` : list[0].full_name });
     })();
   }, [customerId]);
 
@@ -65,7 +68,7 @@ export default function QuoteDocFields({ supabase, customerId, value, onChange, 
         {open ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
         <FileSignature className="h-4 w-4 text-indigo-600" />
         <span className="text-sm font-semibold text-slate-700">Teklif belgesi: hitap, onay ve koşullar</span>
-        <span className="ml-auto truncate text-xs text-slate-400">{shownName ? `Sayın: ${shownName}` : 'Müşteri kartındaki ad kullanılır'}</span>
+        <span className="ml-auto truncate text-xs text-slate-400">{[shownName ? `Sayın: ${shownName}` : 'Müşteri kartındaki ad kullanılır', value.attention_to && `Dikkatine: ${value.attention_to}`].filter(Boolean).join(' · ')}</span>
       </button>
       {open && (
         <div className="space-y-3 border-t px-3 pb-3 pt-3">

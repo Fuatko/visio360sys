@@ -133,6 +133,7 @@ export default function QuotesPage() {
   const [fxReady, setFxReady] = useState(false);   // doviz.sql kurulu mu
   
   const [doc, setDoc] = useState<QuoteDoc>(EMPTY_DOC);
+  const [docEdit, setDocEdit] = useState<(QuoteDoc & { valid_until: string }) | null>(null);
   const [formData, setFormData] = useState({
     customer_id: '',
     subject: '',
@@ -613,6 +614,7 @@ export default function QuotesPage() {
       .select('id, quote_number, revision, status, total, created_at, revision_reason, reviewed_by_name, reviewed_at')
       .or(`id.eq.${rootId},root_quote_id.eq.${rootId}`)
       .order('revision', { ascending: true });
+    setDocEdit(null);
     setSelectedQuote({ ...quote, items: items || [], history: history || [] });
     setDetailModalOpen(true);
   };
@@ -922,7 +924,7 @@ export default function QuotesPage() {
             />
             <ValidityPicker value={formData.valid_until} onChange={(v) => setFormData({ ...formData, valid_until: v })} />
           </div>
-          <QuoteDocFields supabase={supabase} customerId={formData.customer_id} value={doc} onChange={(p) => setDoc(d => ({ ...d, ...p }))} />
+          <QuoteDocFields supabase={supabase} customerId={formData.customer_id} value={doc} autoAttention onChange={(p) => setDoc(d => ({ ...d, ...p }))} />
 
           <DealerTermBar
             termDays={paymentTerm}
@@ -1102,15 +1104,42 @@ export default function QuotesPage() {
               </Badge>
             </div>
 
-            {/* Müşteri Bilgileri */}
-            <div>
-              <p className="text-sm text-slate-500">Müşteri</p>
-              <p className="font-semibold text-lg">{selectedQuote.customer_title || selectedQuote.customer?.name}</p>
-              {selectedQuote.customer_title && selectedQuote.customer?.name && selectedQuote.customer_title !== selectedQuote.customer.name && (
-                <p className="text-xs text-slate-400">Sistem: {selectedQuote.customer?.name}</p>
+            {/* Müşteri ve belge bilgileri */}
+            {(() => { const sq: any = selectedQuote; const editable = !['accepted', 'rejected', 'revised'].includes(sq.status); return (
+            <div className="space-y-2">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-500">Sayın</p>
+                  <p className="font-semibold text-lg">{sq.customer_title || sq.customer?.name}</p>
+                  {sq.attention_to && <p className="text-sm text-slate-700"><span className="text-slate-500">Dikkatine: </span>{sq.attention_to}</p>}
+                  {selectedQuote.subject && <p className="mt-1 text-slate-600">{selectedQuote.subject}</p>}
+                </div>
+                {editable && !docEdit && <Button size="sm" variant="secondary" className="print:hidden" onClick={() => setDocEdit({ ...docFrom(sq), valid_until: sq.valid_until || '' })}>Ad, ilgili kişi ve koşulları düzenle</Button>}
+              </div>
+              {(sq.acceptor_title || sq.signer_name) && (
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  {sq.signer_name && <p><span className="text-slate-500">Teklifi veren: </span>{sq.signer_name}{sq.signer_title ? ` – ${sq.signer_title}` : ''}</p>}
+                  {sq.acceptor_title && <p><span className="text-slate-500">Teklifi kabul eden: </span>{sq.acceptor_title}</p>}
+                </div>
               )}
-              {selectedQuote.subject && <p className="text-slate-600">{selectedQuote.subject}</p>}
-            </div>
+              {docEdit && (
+                <div className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 print:hidden">
+                  {sq.status === 'sent' && <p className="text-xs text-amber-800">Teklif müşteriye gönderilmiş: değişiklik online teklif sayfasında da hemen görünür. Fiyat / kalem değişikliği için revizyon açın.</p>}
+                  <div className="max-w-xs"><ValidityPicker value={docEdit.valid_until} from={sq.sent_at || sq.created_at} onChange={(v) => setDocEdit({ ...docEdit, valid_until: v })} /></div>
+                  <QuoteDocFields supabase={supabase} customerId={sq.customer_id} value={docEdit} defaultOpen autoAttention onChange={(p) => setDocEdit({ ...docEdit, ...p })} />
+                  <div className="flex justify-end gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setDocEdit(null)}>Vazgeç</Button>
+                    <Button size="sm" onClick={async () => {
+                      const { valid_until, ...d } = docEdit;
+                      const patch = { ...docPayload(d), valid_until };
+                      const { error } = await supabase.from('quotes').update(patch).eq('id', sq.id);
+                      if (error) { alert(isMissingDocCol(error.message) ? 'Önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); return; }
+                      setSelectedQuote({ ...sq, ...patch }); setDocEdit(null); fetchData();
+                    }}>Kaydet</Button>
+                  </div>
+                </div>
+              )}
+            </div>); })()}
             {(selectedQuote as any).customer_response && (
               <div className={`rounded-lg border p-3 text-sm ${(selectedQuote as any).customer_response === 'accepted' ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
                 <p className="font-semibold">{CUSTOMER_RESPONSE[(selectedQuote as any).customer_response]?.label}</p>
@@ -1177,7 +1206,15 @@ export default function QuotesPage() {
             {selectedQuote.notes && (
               <div className="bg-slate-50 p-3 rounded-lg">
                 <p className="text-sm text-slate-500">Notlar:</p>
-                <p className="text-sm">{selectedQuote.notes}</p>
+                <p className="whitespace-pre-wrap text-sm">{selectedQuote.notes}</p>
+              </div>
+            )}
+            {((selectedQuote as any).delivery_terms || (selectedQuote as any).warranty_terms || (selectedQuote as any).extra_terms) && (
+              <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
+                <p className="text-slate-500">Ticari koşullar:</p>
+                {(selectedQuote as any).delivery_terms && <p><span className="text-slate-500">Teslim: </span>{(selectedQuote as any).delivery_terms}</p>}
+                {(selectedQuote as any).warranty_terms && <p><span className="text-slate-500">Garanti: </span>{(selectedQuote as any).warranty_terms}</p>}
+                {(selectedQuote as any).extra_terms && <p className="whitespace-pre-wrap">{(selectedQuote as any).extra_terms}</p>}
               </div>
             )}
 
