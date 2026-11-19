@@ -28,6 +28,7 @@ export default function QuotePrintPage() {
   const [lhReady, setLhReady] = useState(true);
   const [logo, setLogo] = useState<string | null>(null);
   const [stamp, setStamp] = useState<string | null>(null);
+  const [stampErr, setStampErr] = useState('');
   const stampRef = useRef<HTMLInputElement>(null);
   const [orgName, setOrgName] = useState('');
   const [edit, setEdit] = useState(false);
@@ -35,10 +36,22 @@ export default function QuotePrintPage() {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const embedImage = async (path: string): Promise<string | null> => {
+  // Görseli indirip tarayıcıda çözer ve PNG data URL'ye çevirir: yazdırma / PDF'e kaydetmede kesin basılır.
+  // Çözülemezse (bozuk / desteklenmeyen dosya) nedenini döndürür.
+  const embedImage = async (path: string): Promise<{ url: string | null; err?: string }> => {
     const { data, error } = await supabase.storage.from('quote-files').download(path);
-    if (error || !data) { const s = await supabase.storage.from('quote-files').createSignedUrl(path, 3600); return s.data?.signedUrl || null; }
-    return await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = () => res(null); r.readAsDataURL(data); });
+    if (error || !data) return { url: null, err: `Dosya indirilemedi (${error?.message || 'bulunamadı'})` };
+    const obj = URL.createObjectURL(data);
+    try {
+      const img = await new Promise<HTMLImageElement>((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('decode')); im.src = obj; });
+      const scale = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.naturalWidth * scale); cv.height = Math.round(img.naturalHeight * scale);
+      cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height);
+      return { url: cv.toDataURL('image/png') };
+    } catch {
+      return { url: null, err: `Görsel açılamadı (dosya türü: ${data.type || 'bilinmiyor'}, ${Math.round(data.size / 1024)} KB). PNG veya JPG olarak yeniden yükleyin.` };
+    } finally { URL.revokeObjectURL(obj); }
   };
   const load = useCallback(async () => {
     const { data: quote } = await supabase.from('quotes').select('*, customer:customer_id(*)').eq('id', id).maybeSingle();
@@ -52,8 +65,8 @@ export default function QuotePrintPage() {
     const letter = (l as any).data || {};
     setLh(letter);
     // Logo ve kaşe belgeye gömülür (data URL): yazdırma / PDF'e kaydetmede geçici bağlantılı görseller basılmayabiliyor
-    if (letter.logo_path) setLogo(await embedImage(letter.logo_path));
-    if (letter.stamp_path) setStamp(await embedImage(letter.stamp_path));
+    if (letter.logo_path) setLogo((await embedImage(letter.logo_path)).url);
+    if (letter.stamp_path) { const r = await embedImage(letter.stamp_path); setStamp(r.url); setStampErr(r.err || ''); } else { setStamp(null); setStampErr(''); }
     const { data: org } = await supabase.from('organizations').select('name').eq('id', quote.organization_id).maybeSingle();
     setOrgName(org?.name || '');
     // Kaydedilen PDF'in adı ve sekme başlığı: teklif numarası (+ müşteri)
@@ -107,7 +120,7 @@ export default function QuotePrintPage() {
       const { error } = await supabase.storage.from('quote-files').upload(path, f, { contentType: f.type });
       if (error) throw error;
       setLh({ ...lh, stamp_path: path });
-      setStamp(await embedImage(path));
+      const r = await embedImage(path); setStamp(r.url); setStampErr(r.err || '');
     } catch (e: any) { alert(e.message); } finally { setBusy(false); }
   };
   const uploadLogo = async (f?: File) => {
@@ -159,6 +172,7 @@ export default function QuotePrintPage() {
         )}
         <button onClick={printNow} className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: accent }}><Printer className="h-4 w-4" />PDF indir / Yazdır</button>
       </div>
+      {q.show_stamp && lh.stamp_path && !stamp && <p className="mx-auto mb-3 max-w-[210mm] rounded bg-red-50 p-2 text-xs text-red-700 print:hidden">Kaşe-imza seçili ama görsel yüklenemedi: {stampErr || 'yükleniyor…'} — Antet bilgileri → Kaşe ve imza → Yükle.</p>}
       {!lhReady && <p className="mx-auto mb-3 max-w-[210mm] rounded bg-amber-50 p-2 text-xs text-amber-800 print:hidden">Antet ve logo için teklif-dosya.sql dosyasını Supabase'de çalıştırın.</p>}
       {lhReady && !lh.legal_name && <p className="mx-auto mb-3 max-w-[210mm] rounded bg-indigo-50 p-2 text-xs text-indigo-900 print:hidden">İlk kullanım: <b>Antet bilgileri</b>nden unvan, adres, vergi bilgileri, IBAN, logo ve standart koşullarınızı bir kez girin; tüm tekliflerde kullanılır.</p>}
 
