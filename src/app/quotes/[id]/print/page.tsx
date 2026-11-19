@@ -50,6 +50,9 @@ export default function QuotePrintPage() {
     if (letter.stamp_path) { const { data } = await supabase.storage.from('quote-files').createSignedUrl(letter.stamp_path, 3600); setStamp(data?.signedUrl || null); }
     const { data: org } = await supabase.from('organizations').select('name').eq('id', quote.organization_id).maybeSingle();
     setOrgName(org?.name || '');
+    // Kaydedilen PDF'in adı ve sekme başlığı: teklif numarası (+ müşteri)
+    const cust = quote.customer_title || quote.customer?.legal_name || quote.customer?.name || '';
+    document.title = `Teklif ${quote.quote_number || ''}${quote.revision ? ` Rev.${quote.revision}` : ''}${cust ? ` – ${cust}` : ''}`.replace(/[\\/:*?"<>|]/g, '-');
     setItems(it.data || []);
     setQ({ ...quote, rep: (rep as any).data });
   }, [id]);
@@ -66,6 +69,20 @@ export default function QuotePrintPage() {
     const { error } = await supabase.from('quote_letterhead').upsert({ ...rest, organization_id: await orgIdOf(supabase), updated_at: new Date().toISOString() });
     setBusy(false);
     if (error) alert(/bank_accounts|stamp_path/.test(error.message) ? 'Banka listesi ve kaşe-imza için önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); else { setEdit(false); load(); }
+  };
+  const toggleStamp = async () => {
+    const v = !q.show_stamp;
+    setBusy(true);
+    const { error } = await supabase.from('quotes').update({ show_stamp: v }).eq('id', id);
+    setBusy(false);
+    if (error) { alert(isMissingDocCol(error.message) ? 'Önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); return; }
+    setQ({ ...q, show_stamp: v });
+  };
+  // Kaşe görseli yüklenmeden yazdırma penceresi açılmasın
+  const printNow = async () => {
+    const img = document.querySelector<HTMLImageElement>('img[alt="Kaşe ve imza"]');
+    if (img && !img.complete) await new Promise(r => { img.onload = img.onerror = () => r(null); setTimeout(r, 4000); });
+    window.print();
   };
   const saveDoc = async () => {
     if (!docEdit) return;
@@ -127,7 +144,14 @@ export default function QuotePrintPage() {
         <button disabled={['accepted', 'rejected', 'revised'].includes(q.status)} title={['accepted', 'rejected', 'revised'].includes(q.status) ? 'Sonuçlanmış teklif değiştirilemez; revizyon açın' : ''}
           onClick={() => setDocEdit({ ...docFrom(q), valid_until: q.valid_until || '', notes: q.notes || '', subject: q.subject || '' })} className="ml-auto flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-40"><FileSignature className="h-4 w-4" />Bu teklifin konu / ad / notlar / koşulları</button>
         <button onClick={() => setEdit(true)} className="flex items-center gap-1 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50"><Settings2 className="h-4 w-4" />Antet bilgileri</button>
-        <button onClick={() => window.print()} className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: accent }}><Printer className="h-4 w-4" />PDF indir / Yazdır</button>
+        {lh.stamp_path ? (
+          <button disabled={busy || ['accepted', 'rejected', 'revised'].includes(q.status)} onClick={toggleStamp}
+            className={`flex items-center gap-1 rounded-lg border px-3 py-2 text-sm ${q.show_stamp ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+            <Stamp className="h-4 w-4" />{q.show_stamp ? 'Kaşe-imza: eklendi' : 'Kaşe-imza ekle'}</button>
+        ) : (
+          <button onClick={() => setEdit(true)} className="flex items-center gap-1 rounded-lg border border-dashed bg-white px-3 py-2 text-sm text-slate-500 hover:bg-slate-50" title="Antet bilgileri → Kaşe ve imza → Yükle"><Stamp className="h-4 w-4" />Kaşe-imza yüklenmedi</button>
+        )}
+        <button onClick={printNow} className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: accent }}><Printer className="h-4 w-4" />PDF indir / Yazdır</button>
       </div>
       {!lhReady && <p className="mx-auto mb-3 max-w-[210mm] rounded bg-amber-50 p-2 text-xs text-amber-800 print:hidden">Antet ve logo için teklif-dosya.sql dosyasını Supabase'de çalıştırın.</p>}
       {lhReady && !lh.legal_name && <p className="mx-auto mb-3 max-w-[210mm] rounded bg-indigo-50 p-2 text-xs text-indigo-900 print:hidden">İlk kullanım: <b>Antet bilgileri</b>nden unvan, adres, vergi bilgileri, IBAN, logo ve standart koşullarınızı bir kez girin; tüm tekliflerde kullanılır.</p>}

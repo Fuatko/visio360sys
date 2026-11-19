@@ -101,6 +101,11 @@ export default function PublicQuotePage() {
     setDone(mode); setMode(null); load(false);
   };
 
+  // Tarayıcı sekmesi / PDF adı: uygulama adı değil teklif numarası
+  useEffect(() => {
+    if (q?.quote_number) document.title = `Teklif ${q.quote_number}${q.revision ? ` Rev.${q.revision}` : ''}${q.organization ? ` – ${q.organization}` : ''}`;
+  }, [q?.quote_number, q?.revision, q?.organization]);
+
   if (q === undefined) return <div className="flex min-h-screen items-center justify-center bg-slate-50"><div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" /></div>;
   if (q === null) return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
