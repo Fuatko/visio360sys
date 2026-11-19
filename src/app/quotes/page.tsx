@@ -1109,9 +1109,10 @@ export default function QuotesPage() {
             <div className="space-y-2">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-500">Sayın</p>
                   <p className="font-semibold text-lg">{sq.customer_title || sq.customer?.name}</p>
-                  {sq.attention_to && <p className="text-sm text-slate-700"><span className="text-slate-500">Dikkatine: </span>{sq.attention_to}</p>}
+                  {sq.attention_to && <p className="text-sm font-medium text-slate-800">{sq.attention_to}</p>}
+                  {sq.attention_title && <p className="text-sm text-slate-600">{sq.attention_title}</p>}
+                  {sq.recipient_address && <p className="mt-1 whitespace-pre-line text-xs text-slate-500">{sq.recipient_address}</p>}
                   {selectedQuote.subject && <p className="mt-1 text-slate-600">{selectedQuote.subject}</p>}
                 </div>
                 {editable && !docEdit && <Button size="sm" variant="secondary" className="print:hidden" onClick={() => setDocEdit({ ...docFrom(sq), valid_until: sq.valid_until || '' })}>Ad, ilgili kişi ve koşulları düzenle</Button>}

@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase';
-import { Printer, Settings2, X, Upload, Loader2, FileSignature } from 'lucide-react';
+import { Printer, Settings2, X, Upload, Loader2, FileSignature, Plus, Trash2, Stamp } from 'lucide-react';
 import { orgIdOf } from '@/lib/quote-files';
 import QuoteDocFields, { ValidityPicker } from '@/components/quotes/QuoteDocFields';
-import { QuoteDoc, docFrom, docPayload, isMissingDocCol } from '@/lib/quote-doc';
+import { QuoteDoc, docFrom, docPayload, isMissingDocCol, bankAccounts, BankAccount } from '@/lib/quote-doc';
 
 const n = (v: any) => Number(v) || 0;
 const SYM: Record<string, string> = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
@@ -14,7 +14,7 @@ const fd = (d?: string | null) => (d ? new Date(d).toLocaleDateString('tr-TR', {
 
 const FIELDS: [string, string, boolean?][] = [
   ['legal_name', 'Resmi unvan'], ['address', 'Adres', true], ['phone', 'Telefon'], ['email', 'E-posta'], ['website', 'Web sitesi'],
-  ['tax_office', 'Vergi dairesi'], ['tax_number', 'Vergi no'], ['mersis_no', 'MERSİS no'], ['bank_name', 'Banka'], ['iban', 'IBAN'],
+  ['tax_office', 'Vergi dairesi'], ['tax_number', 'Vergi no'], ['mersis_no', 'MERSİS no'],
   ['signer_name', 'İmza yetkilisi'], ['signer_title', 'Unvanı'], ['standard_terms', 'Standart teklif koşulları (her teklifin altına eklenir)', true],
 ];
 
@@ -27,6 +27,8 @@ export default function QuotePrintPage() {
   const [lh, setLh] = useState<any>({});
   const [lhReady, setLhReady] = useState(true);
   const [logo, setLogo] = useState<string | null>(null);
+  const [stamp, setStamp] = useState<string | null>(null);
+  const stampRef = useRef<HTMLInputElement>(null);
   const [orgName, setOrgName] = useState('');
   const [edit, setEdit] = useState(false);
   const [docEdit, setDocEdit] = useState<(QuoteDoc & { valid_until: string }) | null>(null);
@@ -45,6 +47,7 @@ export default function QuotePrintPage() {
     const letter = (l as any).data || {};
     setLh(letter);
     if (letter.logo_path) { const { data } = await supabase.storage.from('quote-files').createSignedUrl(letter.logo_path, 3600); setLogo(data?.signedUrl || null); }
+    if (letter.stamp_path) { const { data } = await supabase.storage.from('quote-files').createSignedUrl(letter.stamp_path, 3600); setStamp(data?.signedUrl || null); }
     const { data: org } = await supabase.from('organizations').select('name').eq('id', quote.organization_id).maybeSingle();
     setOrgName(org?.name || '');
     setItems(it.data || []);
@@ -55,9 +58,14 @@ export default function QuotePrintPage() {
   const saveLh = async () => {
     setBusy(true);
     const { id: _i, updated_at, ...rest } = lh;
+    if (Array.isArray(rest.bank_accounts)) {
+      rest.bank_accounts = rest.bank_accounts.filter((b: BankAccount) => b.bank_name || b.iban);
+      const first = rest.bank_accounts[0];   // eski tekli alanlar ilk hesapla uyumlu kalsın
+      rest.bank_name = first?.bank_name || null; rest.iban = first?.iban || null;
+    }
     const { error } = await supabase.from('quote_letterhead').upsert({ ...rest, organization_id: await orgIdOf(supabase), updated_at: new Date().toISOString() });
     setBusy(false);
-    if (error) alert(error.message); else { setEdit(false); load(); }
+    if (error) alert(/bank_accounts|stamp_path/.test(error.message) ? 'Banka listesi ve kaşe-imza için önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); else { setEdit(false); load(); }
   };
   const saveDoc = async () => {
     if (!docEdit) return;
@@ -67,6 +75,17 @@ export default function QuotePrintPage() {
     setBusy(false);
     if (error) { alert(isMissingDocCol(error.message) ? 'Bu alanlar için önce teklif-ozellestirme.sql dosyası Supabase\'de çalıştırılmalı.' : error.message); return; }
     setDocEdit(null); load();
+  };
+  const uploadStamp = async (f?: File) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const path = `${await orgIdOf(supabase)}/antet/kase-imza-${Date.now()}.${(f.name.split('.').pop() || 'png').toLowerCase()}`;
+      const { error } = await supabase.storage.from('quote-files').upload(path, f, { contentType: f.type });
+      if (error) throw error;
+      setLh({ ...lh, stamp_path: path });
+      const { data } = await supabase.storage.from('quote-files').createSignedUrl(path, 3600); setStamp(data?.signedUrl || null);
+    } catch (e: any) { alert(e.message); } finally { setBusy(false); }
   };
   const uploadLogo = async (f?: File) => {
     if (!f) return;
@@ -138,12 +157,14 @@ export default function QuotePrintPage() {
         {/* Müşteri ve temsilci */}
         <div className="mt-5 grid grid-cols-2 gap-6">
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Sayın</p>
             <p className="text-[13px] font-semibold">{q.customer_title || c.legal_name || c.name}</p>
-            {q.attention_to && <p className="text-[11px] text-slate-700"><span className="text-slate-500">Dikkatine: </span>{q.attention_to}</p>}
-            {c.address && <p className="whitespace-pre-line text-[11px] text-slate-600">{c.address}</p>}
-            {(c.district || c.city) && <p className="text-[11px] text-slate-600">{[c.district, c.city].filter(Boolean).join(' / ')}</p>}
-            {(c.tax_office || c.tax_number) && <p className="text-[11px] text-slate-600">{c.tax_office ? `${c.tax_office} V.D. · ` : ''}{c.tax_number ? `VKN ${c.tax_number}` : ''}</p>}
+            {q.attention_to && <p className="text-[11.5px] font-medium text-slate-800">{q.attention_to}</p>}
+            {q.attention_title && <p className="text-[11px] text-slate-600">{q.attention_title}</p>}
+            {q.recipient_address ? <p className="mt-1 whitespace-pre-line text-[11px] text-slate-600">{q.recipient_address}</p> : (<>
+              {c.address && <p className="mt-1 whitespace-pre-line text-[11px] text-slate-600">{c.address}</p>}
+              {(c.district || c.city) && <p className="text-[11px] text-slate-600">{[c.district, c.city].filter(Boolean).join(' / ')}</p>}
+              {(c.tax_office || c.tax_number) && <p className="text-[11px] text-slate-600">{c.tax_office ? `${c.tax_office} V.D. · ` : ''}{c.tax_number ? `VKN ${c.tax_number}` : ''}</p>}
+            </>)}
           </div>
           {q.rep && (
             <div className="text-right">
@@ -196,17 +217,19 @@ export default function QuotePrintPage() {
               <li>Fiyatlar {cur === 'TRY' ? 'Türk Lirası' : cur} cinsindendir; KDV ayrıca gösterilmiştir.</li>
               {q.delivery_terms && <li>Teslim: {q.delivery_terms}</li>}
               {q.warranty_terms && <li>Garanti: {q.warranty_terms}</li>}
-              {lh.iban && <li>Banka: {lh.bank_name ? `${lh.bank_name} · ` : ''}IBAN {lh.iban} · {company}</li>}
+              {bankAccounts(lh).length > 0 && <li>Banka hesaplarımız ({company}):
+                <ul className="mt-0.5 space-y-0.5 pl-1">{bankAccounts(lh).map((b, k) => (
+                  <li key={k}>{[b.bank_name, b.branch].filter(Boolean).join(' – ')}{b.currency ? ` (${b.currency})` : ''}{b.iban ? ` · IBAN ${b.iban}` : ''}</li>))}</ul></li>}
             </ul>
           </div>
           {q.extra_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Bu teklife özel şartlar</p><p className="whitespace-pre-wrap text-slate-700">{q.extra_terms}</p></div>}
           {q.notes && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Notlar</p><p className="whitespace-pre-wrap text-slate-700">{q.notes}</p></div>}
-          {lh.standard_terms && !q.hide_standard_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Genel şartlar</p><p className="whitespace-pre-wrap text-[10.5px] text-slate-600">{lh.standard_terms}</p></div>}
+          {(q.standard_terms_override || lh.standard_terms) && !q.hide_standard_terms && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: accent }}>Genel şartlar</p><p className="whitespace-pre-wrap text-[10.5px] text-slate-600">{q.standard_terms_override || lh.standard_terms}</p></div>}
         </div>
 
         {/* İmza */}
         <div className="mt-10 grid grid-cols-2 gap-10 text-[11px]" style={{ breakInside: 'avoid' }}>
-          <div><p className="text-slate-500">Teklifi veren</p><p className="mt-1 font-semibold">{company}</p><p>{q.signer_name || lh.signer_name || q.rep?.name || ''}</p><p className="text-slate-500">{q.signer_name ? (q.signer_title || '') : (lh.signer_title || q.rep?.title || '')}</p><div className="mt-10 border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
+          <div><p className="text-slate-500">Teklifi veren</p><p className="mt-1 font-semibold">{company}</p><p>{q.signer_name || lh.signer_name || q.rep?.name || ''}</p><p className="text-slate-500">{q.signer_name ? (q.signer_title || '') : (lh.signer_title || q.rep?.title || '')}</p>{q.show_stamp && stamp ? <img src={stamp} alt="Kaşe ve imza" className="mt-1 max-h-[38mm] max-w-[70mm] object-contain" /> : <div className="mt-10" />}<div className="border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
           <div><p className="text-slate-500">Teklifi kabul eden</p><p className="mt-1 font-semibold">{q.acceptor_title || q.customer_title || c.legal_name || c.name}</p><p className="text-slate-500">Ad soyad / unvan / tarih</p><div className="mt-[52px] border-t border-slate-300 pt-1 text-[10px] text-slate-400">Kaşe / İmza</div></div>
         </div>
         {q.share_token && ['sent', 'accepted', 'expired'].includes(q.status) && <p className="mt-8 text-center text-[9.5px] text-slate-400">Bu teklifi online görüntülemek ve onaylamak için: {typeof window !== 'undefined' ? window.location.origin : ''}/q/{q.share_token}</p>}
@@ -232,6 +255,29 @@ export default function QuotePrintPage() {
               <button disabled={busy} onClick={() => fileRef.current?.click()} className="flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs"><Upload className="h-3.5 w-3.5" />Logo yükle</button>
               <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="hidden" onChange={e => uploadLogo(e.target.files?.[0])} />
               <label className="ml-auto flex items-center gap-2 text-xs">Vurgu rengi <input type="color" value={lh.accent_color || '#1B3A5C'} onChange={e => setLh({ ...lh, accent_color: e.target.value })} /></label>
+            </div>
+            <div className="mb-3 flex items-center gap-3 rounded-lg border p-2">
+              {stamp ? <img src={stamp} alt="" className="h-16 max-w-[140px] rounded border bg-white object-contain p-1" /> : <div className="flex h-16 w-28 items-center justify-center rounded border text-[10px] text-slate-400">kaşe-imza yok</div>}
+              <div className="text-xs text-slate-600"><p className="font-medium text-slate-800">Kaşe ve imza</p><p>Şeffaf arka planlı PNG önerilir. Teklifte "Kaşe ve imzayı teklife ekle" seçilince imza alanına basılır.</p></div>
+              <button disabled={busy} onClick={() => stampRef.current?.click()} className="ml-auto flex shrink-0 items-center gap-1 rounded-lg border px-3 py-1.5 text-xs"><Stamp className="h-3.5 w-3.5" />Yükle</button>
+              {lh.stamp_path && <button disabled={busy} onClick={() => { setLh({ ...lh, stamp_path: null }); setStamp(null); }} className="shrink-0 text-xs text-red-600">Kaldır</button>}
+              <input ref={stampRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={e => uploadStamp(e.target.files?.[0])} />
+            </div>
+            <div className="mb-3 rounded-lg border p-2">
+              <div className="mb-1 flex items-center"><p className="text-xs font-medium text-slate-800">Banka hesapları</p>
+                <button type="button" onClick={() => setLh({ ...lh, bank_accounts: [...(Array.isArray(lh.bank_accounts) && lh.bank_accounts.length ? lh.bank_accounts : bankAccounts(lh)), { bank_name: '', branch: '', currency: 'TL', iban: '' }] })} className="ml-auto flex items-center gap-1 text-xs text-indigo-600"><Plus className="h-3.5 w-3.5" />Hesap ekle</button></div>
+              {(Array.isArray(lh.bank_accounts) && lh.bank_accounts.length ? lh.bank_accounts : bankAccounts(lh)).map((b: BankAccount, k: number, arr: BankAccount[]) => {
+                const set = (patch: Partial<BankAccount>) => setLh({ ...lh, bank_accounts: arr.map((x, j) => j === k ? { ...x, ...patch } : x) });
+                return (
+                  <div key={k} className="mt-1 grid grid-cols-[1.2fr_1fr_0.6fr_2fr_auto] items-center gap-1">
+                    <input value={b.bank_name || ''} onChange={e => set({ bank_name: e.target.value })} placeholder="Banka" className="h-8 rounded border px-2 text-xs" />
+                    <input value={b.branch || ''} onChange={e => set({ branch: e.target.value })} placeholder="Şube" className="h-8 rounded border px-2 text-xs" />
+                    <input value={b.currency || ''} onChange={e => set({ currency: e.target.value })} placeholder="TL" className="h-8 rounded border px-2 text-xs" />
+                    <input value={b.iban || ''} onChange={e => set({ iban: e.target.value })} placeholder="TR.. IBAN" className="h-8 rounded border px-2 font-mono text-xs" />
+                    <button type="button" onClick={() => setLh({ ...lh, bank_accounts: arr.filter((_, j) => j !== k) })} className="text-slate-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                  </div>);
+              })}
+              {!bankAccounts(lh).length && !(Array.isArray(lh.bank_accounts) && lh.bank_accounts.length) && <p className="text-[11px] text-slate-400">Henüz hesap yok.</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">{FIELDS.map(([k, l, wide]) => (
               <label key={k} className={`text-xs text-slate-600 ${wide ? 'col-span-2' : ''}`}>{l}

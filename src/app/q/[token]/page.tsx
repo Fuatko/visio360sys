@@ -76,7 +76,7 @@ export default function PublicQuotePage() {
       const { data: d } = await supabase.rpc('public_quote_doc', { p_token: token });
       if (d) {
         data.doc = d;
-        if (d.attention_to) { const [nm, ...t] = String(d.attention_to).split(/\s+[–-]\s+/); setForm(f => f.name || f.title ? f : { ...f, name: nm, title: t.join(' - ') }); }
+        if (d.attention_to) { const nm = String(d.attention_to).replace(/^Sn\.?\s+/i, ''); setForm(f => f.name || f.title ? f : { ...f, name: nm, title: d.attention_title || '' }); }
       }
     }
     setQ(error ? null : data && !data.view_id && viewId.current ? { ...data, view_id: viewId.current } : data);
@@ -154,7 +154,7 @@ export default function PublicQuotePage() {
 
           <div className="space-y-5 p-6">
             <div className="flex flex-wrap justify-between gap-4 text-sm">
-              <div><p className="text-xs text-slate-500">Sayın</p><p className="text-base font-semibold">{q.doc?.customer_title || q.customer}</p>{q.doc?.attention_to && <p className="text-sm text-slate-600"><span className="text-slate-500">Dikkatine: </span>{q.doc.attention_to}</p>}</div>
+              <div><p className="text-base font-semibold">{q.doc?.customer_title || q.customer}</p>{q.doc?.attention_to && <p className="text-sm font-medium text-slate-700">{q.doc.attention_to}</p>}{q.doc?.attention_title && <p className="text-sm text-slate-600">{q.doc.attention_title}</p>}{q.doc?.recipient_address && <p className="mt-1 whitespace-pre-line text-xs text-slate-500">{q.doc.recipient_address}</p>}</div>
               {q.sales_rep && (
                 <div className="text-right">
                   <p className="text-xs text-slate-500">Temsilciniz</p>
