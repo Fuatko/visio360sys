@@ -4,6 +4,7 @@ import Header from '@/components/Header';
 import { Card, CardHeader, CardTitle, CardBody, Button, Badge, Modal, Input, Select, EmptyState, Textarea } from '@/components/ui';
 import { formatMoney, formatDate, cleanPayload } from '@/lib/utils';
 import { FileText, Plus, Edit2, Trash2, RefreshCw, Search, Eye, Send, CheckCircle, XCircle, Download, Printer, ShoppingCart, Target, ClipboardCheck, GitBranch, History, ShieldCheck, Link2, Copy, MessageCircle, Mail, Settings2, ExternalLink } from 'lucide-react';
+import ProductPicker from '@/components/quotes/ProductPicker';
 import QuoteDocFields, { ValidityPicker } from '@/components/quotes/QuoteDocFields';
 import { EMPTY_DOC, QuoteDoc, docFrom, docPayload, isMissingDocCol, withoutDoc } from '@/lib/quote-doc';
 import { useState, useEffect } from 'react';
@@ -975,16 +976,8 @@ export default function QuotesPage() {
                 <div key={index} className="flex flex-wrap gap-2 items-start p-3 bg-slate-50 rounded-lg">
                   <div className="flex-1 grid grid-cols-5 gap-2">
                     <div className="col-span-2">
-                      <select
-                        value={item.product_id}
-                        onChange={(e) => updateItem(index, 'product_id', e.target.value)}
-                        className="w-full px-3 py-2 rounded border border-slate-200 text-sm"
-                      >
-                        <option value="">Ürün Seç</option>
-                        {products.map(p => (
-                          <option key={p.id} value={p.id}>{p.name} - {money(p.price, (p as any).currency)}</option>
-                        ))}
-                      </select>
+                      <ProductPicker supabase={supabase} products={products as any} value={item.product_id} customerId={formData.customer_id}
+                        onChange={(id) => updateItem(index, 'product_id', id)} />
                       {item.description !== undefined && (
                         <input value={item.description} onChange={(e) => setItems(l => l.map((x, i) => i === index ? { ...x, description: e.target.value } : x))}
                           className="mt-1 w-full px-3 py-1.5 rounded border border-slate-200 text-xs" placeholder="Kalem açıklaması" />
